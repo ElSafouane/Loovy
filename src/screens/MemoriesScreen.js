@@ -124,21 +124,37 @@ export default function MemoriesScreen() {
     if (!capTitle.trim()) return Alert.alert('Title required');
     if (!capMessage.trim()) return Alert.alert('Message required');
     if (capUnlockDate <= new Date()) return Alert.alert('Invalid date', 'Unlock date must be in the future.');
-    const capsule = {
-      id: Date.now().toString(),
-      title: capTitle.trim(),
-      message: capMessage.trim(),
-      unlockDate: capUnlockDate.toISOString(),
-      createdDate: new Date().toISOString(),
-      author: capAuthor,
-      isOpened: false,
-    };
-    const updated = [...capsules, capsule].sort((a, b) => new Date(a.unlockDate) - new Date(b.unlockDate));
-    await AsyncStorage.setItem('@capsules', JSON.stringify(updated));
-    setCapsules(updated);
-    setCapTitle(''); setCapMessage(''); setCapAuthor('me'); setShowCapDatePicker(false);
-    setCapUnlockDate(() => { const d = new Date(); d.setDate(d.getDate() + 7); return d; });
-    setShowCreateCapsule(false);
+
+    // ⚠️ Confirmation: once sent, capsules cannot be edited or deleted
+    Alert.alert(
+      '🔒 Send Capsule?',
+      'Once sent, this capsule cannot be edited or deleted. Are you sure you want to seal it?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send it 💌',
+          style: 'default',
+          onPress: async () => {
+            const capsule = {
+              id: Date.now().toString(),
+              title: capTitle.trim(),
+              message: capMessage.trim(),
+              unlockDate: capUnlockDate.toISOString(),
+              createdDate: new Date().toISOString(),
+              author: capAuthor,
+              isOpened: false,
+            };
+            const updated = [...capsules, capsule].sort((a, b) => new Date(a.unlockDate) - new Date(b.unlockDate));
+            await AsyncStorage.setItem('@capsules', JSON.stringify(updated));
+            setCapsules(updated);
+            setCapTitle(''); setCapMessage(''); setCapAuthor('me'); setShowCapDatePicker(false);
+            setCapUnlockDate(() => { const d = new Date(); d.setDate(d.getDate() + 7); return d; });
+            setShowCreateCapsule(false);
+          },
+        },
+      ],
+      { cancelable: true }
+    );
   };
 
   const markOpened = async (capsule) => {
