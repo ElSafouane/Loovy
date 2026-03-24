@@ -484,28 +484,19 @@ export default function HomeScreen() {
               </View>
 
               <View style={styles.svgContainer}>
-                <Svg width="180" height="117" viewBox="0 0 200 130">
-                  {/* Continuous airplane heart flight path:
-                      dot (left) → sweep in → cross at heart base →
-                      right lobe → center dip → left lobe →
-                      back to crossing → exit lower-right → airplane */}
+                <Svg width="160" height="120" viewBox="0 0 200 130">
+                  {/* Continuous airplane heart flight path */}
                   <Path
                     d={[
-                      // Lead-in from left dot
                       "M 8,92",
                       "C 30,90 52,85 68,81",
                       "C 78,79 86,78 93,80",
-                      // Right lobe up
                       "C 102,68 120,50 136,37",
                       "C 150,24 148,7 133,4",
-                      // Cross center top to left lobe peak
                       "C 118,1 105,14 93,33",
-                      // Left lobe
                       "C 81,14 68,1 53,4",
                       "C 38,7 36,24 50,37",
-                      // Down back to crossing (heart base)
                       "C 68,52 87,70 93,80",
-                      // Exit sweep lower-right toward airplane
                       "C 106,88 138,104 175,118",
                     ].join(" ")}
                     fill="none"
@@ -521,9 +512,9 @@ export default function HomeScreen() {
                     fill="rgba(233,64,87,0.7)"
                   />
                 </Svg>
-                {/* Airplane at exit, rotated along path direction */}
+                {/* Airplane — positioned at the path exit point (≈ bottom-right) */}
                 <View style={styles.airplaneBadge}>
-                  <Text style={{ fontSize: 10, transform: [{ rotate: '30deg' }] }}>✈️</Text>
+                  <Text style={{ fontSize: 20, transform: [{ rotate: '22deg' }] }}>✈️</Text>
                 </View>
               </View>
 
@@ -766,8 +757,8 @@ const styles = StyleSheet.create({
   locationLabel: { color: colors.text, fontSize: 14, fontWeight: 'bold', marginBottom: 2 },
   locationCity: { color: colors.primary, fontSize: 11, textAlign: 'center' },
 
-  svgContainer: { flex: 1, height: 110, justifyContent: 'center', alignItems: 'center', marginHorizontal: 2 },
-  airplaneBadge: { position: 'absolute', bottom: 2, right: 4 },
+  svgContainer: { flex: 1, height: 120, justifyContent: 'center', alignItems: 'center', marginHorizontal: 2 },
+  airplaneBadge: { position: 'absolute', bottom: 0, right: 10 },
 
   bottomSpacer: { height: 100 },
 

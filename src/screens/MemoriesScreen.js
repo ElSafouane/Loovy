@@ -14,9 +14,7 @@ import { colors, gradients } from '../theme/colors';
 
 export default function MemoriesScreen() {
   const [activeSegment, setActiveSegment] = useState('Timeline');
-
-  // ─── Gallery ───
-  const [galleryImage, setGalleryImage] = useState(null);
+  const [editingMemory, setEditingMemory] = useState(null);
 
   // ─── Memories ───
   const [memories, setMemories] = useState([]);
@@ -99,24 +97,58 @@ export default function MemoriesScreen() {
 
   const resetMemoryForm = () => {
     setNewTitle(''); setNewDescription(''); setNewDate(new Date());
-    setNewEmoji(''); setNewImage(null); setMediaType('emoji'); setShowMemDatePicker(false);
+    setNewEmoji(''); setNewImage(null); setMediaType('emoji');
+    setShowMemDatePicker(false); setEditingMemory(null);
   };
 
   const saveMemory = async () => {
     if (!newTitle.trim()) return Alert.alert('Title required', 'Please add a title for this memory.');
-    const memory = {
-      id: Date.now().toString(),
+    const memoryData = {
+      id: editingMemory ? editingMemory.id : Date.now().toString(),
       title: newTitle.trim(),
       description: newDescription.trim(),
       date: newDate.toISOString(),
       emoji: mediaType === 'emoji' ? newEmoji.trim() : null,
       image: mediaType === 'image' ? newImage : null,
     };
-    const updated = [...memories, memory].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const updated = editingMemory
+      ? memories.map(m => m.id === editingMemory.id ? memoryData : m)
+          .sort((a, b) => new Date(a.date) - new Date(b.date))
+      : [...memories, memoryData].sort((a, b) => new Date(a.date) - new Date(b.date));
     await AsyncStorage.setItem('@memories', JSON.stringify(updated));
     setMemories(updated);
     resetMemoryForm();
     setShowAddMemory(false);
+  };
+
+  const openEditMemory = (mem) => {
+    setEditingMemory(mem);
+    setNewTitle(mem.title);
+    setNewDescription(mem.description || '');
+    setNewDate(new Date(mem.date));
+    setNewEmoji(mem.emoji || '');
+    setNewImage(mem.image || null);
+    setMediaType(mem.image ? 'image' : 'emoji');
+    setShowAddMemory(true);
+  };
+
+  const deleteMemory = (mem) => {
+    Alert.alert(
+      'Delete Memory',
+      `Remove "${mem.title}" from your timeline?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            const updated = memories.filter(m => m.id !== mem.id);
+            await AsyncStorage.setItem('@memories', JSON.stringify(updated));
+            setMemories(updated);
+          },
+        },
+      ]
+    );
   };
 
   // ─── Capsule handlers ───
@@ -164,17 +196,6 @@ export default function MemoriesScreen() {
     setSelectedCapsule({ ...capsule, isOpened: true });
   };
 
-  // ─── Gallery handler ───
-  const pickGalleryImage = async () => {
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [4, 3],
-      quality: 1,
-    });
-    if (!result.canceled) setGalleryImage(result.assets[0].uri);
-  };
-
   // ═══════════════════════════════════════════════════════════
   // RENDER SECTIONS
   // ═══════════════════════════════════════════════════════════
@@ -195,11 +216,13 @@ export default function MemoriesScreen() {
         <View style={styles.timelineContainer}>
           <View style={styles.timelineLine} />
           {memories.map((mem, index) => (
-            <TouchableOpacity key={mem.id} onPress={() => setSelectedMemory(mem)} activeOpacity={0.8}>
-              <Animated.View entering={FadeInUp.delay(index * 100).duration(800)} style={styles.timelineItem}>
-                <View style={styles.timelineDot} />
-                <BlurView intensity={15} tint="light" style={styles.timelineCard}>
-                  <LinearGradient colors={gradients.card} style={StyleSheet.absoluteFill} />
+            <Animated.View key={mem.id} entering={FadeInUp.delay(index * 100).duration(800)} style={styles.timelineItem}>
+              <View style={styles.timelineDot} />
+              <BlurView intensity={15} tint="light" style={styles.timelineCard}>
+                <LinearGradient colors={gradients.card} style={StyleSheet.absoluteFill} />
+
+                {/* Main row — tap opens detail */}
+                <TouchableOpacity onPress={() => setSelectedMemory(mem)} activeOpacity={0.8}>
                   <View style={styles.timelineCardInner}>
                     <View style={styles.timelineContent}>
                       <Text style={styles.timelineDate}>{formatDate(mem.date)}</Text>
@@ -216,9 +239,23 @@ export default function MemoriesScreen() {
                       </View>
                     )}
                   </View>
-                </BlurView>
-              </Animated.View>
-            </TouchableOpacity>
+                </TouchableOpacity>
+
+                {/* Edit / Delete action bar */}
+                <View style={styles.timelineActions}>
+                  <TouchableOpacity style={styles.timelineActionBtn} onPress={() => openEditMemory(mem)}>
+                    <Ionicons name="pencil-outline" size={13} color={colors.primary} />
+                    <Text style={styles.timelineActionText}>Edit</Text>
+                  </TouchableOpacity>
+                  <View style={styles.timelineActionDivider} />
+                  <TouchableOpacity style={styles.timelineActionBtn} onPress={() => deleteMemory(mem)}>
+                    <Ionicons name="trash-outline" size={13} color="#E94057" />
+                    <Text style={[styles.timelineActionText, { color: '#E94057' }]}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
+
+              </BlurView>
+            </Animated.View>
           ))}
         </View>
       )}
@@ -228,33 +265,6 @@ export default function MemoriesScreen() {
         <LinearGradient colors={gradients.love} style={[StyleSheet.absoluteFill, { borderRadius: 30 }]} />
         <Ionicons name="add" size={30} color="#fff" />
       </TouchableOpacity>
-    </Animated.View>
-  );
-
-  const renderGallery = () => (
-    <Animated.View entering={FadeIn.duration(500)}>
-      <Text style={styles.sectionTitle}>Shared Gallery</Text>
-      <BlurView intensity={20} tint="light" style={styles.uploadCard}>
-        <LinearGradient colors={gradients.card} style={StyleSheet.absoluteFill} />
-        {galleryImage ? (
-          <Image source={{ uri: galleryImage }} style={styles.previewImage} />
-        ) : (
-          <View style={styles.uploadPlaceholder}>
-            <Ionicons name="camera" size={40} color={colors.primary} />
-            <Text style={styles.uploadTitle}>Share a Random Memory</Text>
-            <Text style={styles.uploadSubtitle}>Pick a picture from your camera roll</Text>
-          </View>
-        )}
-        <TouchableOpacity style={styles.uploadBtn} onPress={pickGalleryImage}>
-          <Ionicons name="images" size={20} color="#fff" />
-          <Text style={styles.uploadBtnText}>{galleryImage ? 'Change Picture' : 'Upload to Gallery'}</Text>
-        </TouchableOpacity>
-      </BlurView>
-      <View style={styles.galleryGrid}>
-        {memories.filter(m => m.image).map(mem => (
-          <Image key={mem.id} source={{ uri: mem.image }} style={styles.galleryThumb} />
-        ))}
-      </View>
     </Animated.View>
   );
 
@@ -342,28 +352,39 @@ export default function MemoriesScreen() {
           <Text style={styles.subGreeting}>A digital archive of our love</Text>
         </Animated.View>
 
-        {/* Segmented Controls */}
+        {/* Modern Segmented Controls */}
         <Animated.View entering={FadeInUp.delay(200).duration(800)} style={styles.segmentContainer}>
-          {['Timeline', 'Gallery', 'Capsules'].map((segment) => (
-            <TouchableOpacity
-              key={segment}
-              style={[styles.segmentBtn, activeSegment === segment && styles.segmentBtnActive]}
-              onPress={() => setActiveSegment(segment)}
-            >
-              {activeSegment === segment && (
-                <LinearGradient colors={gradients.active} style={[StyleSheet.absoluteFill, { borderRadius: 16 }]} />
-              )}
-              <Text style={[styles.segmentText, activeSegment === segment && styles.segmentTextActive]}>
-                {segment}
-              </Text>
-            </TouchableOpacity>
-          ))}
+          {[
+            { key: 'Timeline', icon: 'time-outline',     label: 'Timeline' },
+            { key: 'Capsules', icon: 'lock-closed-outline', label: 'Capsules' },
+          ].map(({ key, icon, label }) => {
+            const isActive = activeSegment === key;
+            return (
+              <TouchableOpacity
+                key={key}
+                style={[styles.segmentBtn, isActive && styles.segmentBtnActive]}
+                onPress={() => setActiveSegment(key)}
+                activeOpacity={0.75}
+              >
+                {isActive && (
+                  <LinearGradient
+                    colors={gradients.active}
+                    style={[StyleSheet.absoluteFill, { borderRadius: 14 }]}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }}
+                  />
+                )}
+                <Ionicons name={icon} size={15} color={isActive ? '#fff' : colors.textSecondary} />
+                <Text style={[styles.segmentText, isActive && styles.segmentTextActive]}>
+                  {label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
         </Animated.View>
 
         {/* Dynamic Content */}
         <View style={styles.dynamicContent}>
           {activeSegment === 'Timeline' && renderTimeline()}
-          {activeSegment === 'Gallery' && renderGallery()}
           {activeSegment === 'Capsules' && renderCapsules()}
         </View>
 
@@ -380,7 +401,7 @@ export default function MemoriesScreen() {
               <LinearGradient colors={['#302b63', '#24243e']} style={StyleSheet.absoluteFill} />
               <ScrollView showsVerticalScrollIndicator={false}>
                 <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>Add a Memory</Text>
+                  <Text style={styles.modalTitle}>{editingMemory ? 'Edit Memory ✏️' : 'Add a Memory'}</Text>
                   <TouchableOpacity onPress={() => { setShowAddMemory(false); resetMemoryForm(); }}>
                     <Ionicons name="close" size={28} color="#fff" />
                   </TouchableOpacity>
@@ -492,7 +513,7 @@ export default function MemoriesScreen() {
 
                 <TouchableOpacity style={styles.saveBtn} onPress={saveMemory}>
                   <LinearGradient colors={gradients.active} style={StyleSheet.absoluteFill} />
-                  <Text style={styles.saveBtnText}>Save Memory 💕</Text>
+                  <Text style={styles.saveBtnText}>{editingMemory ? 'Update Memory ✏️' : 'Save Memory 💕'}</Text>
                 </TouchableOpacity>
               </ScrollView>
             </View>
@@ -699,15 +720,29 @@ const styles = StyleSheet.create({
   greeting: { fontSize: 28, fontWeight: '800', color: colors.text, letterSpacing: 0.5 },
   subGreeting: { fontSize: 16, color: colors.textSecondary, marginTop: 5 },
 
-  // Segmented control
+  // Segmented control — modern pill
   segmentContainer: {
-    flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.05)',
-    borderRadius: 20, padding: 4, marginBottom: 25,
+    flexDirection: 'row',
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 18,
+    padding: 5,
+    marginBottom: 25,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
   },
-  segmentBtn: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: 16, overflow: 'hidden' },
+  segmentBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 11,
+    borderRadius: 14,
+    overflow: 'hidden',
+    gap: 6,
+  },
   segmentBtnActive: {},
   segmentText: { color: colors.textSecondary, fontWeight: '600', fontSize: 14 },
-  segmentTextActive: { color: '#fff', fontWeight: 'bold' },
+  segmentTextActive: { color: '#fff', fontWeight: '700', fontSize: 14 },
 
   dynamicContent: { minHeight: 400 },
 
@@ -756,6 +791,30 @@ const styles = StyleSheet.create({
   },
   timelineEmoji: { fontSize: 34 },
 
+  // Timeline action bar (Edit / Delete)
+  timelineActions: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,255,255,0.07)',
+  },
+  timelineActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 9,
+    gap: 5,
+  },
+  timelineActionDivider: {
+    width: 1,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+  },
+  timelineActionText: {
+    color: colors.primary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+
   // FAB
   fab: {
     width: 60, height: 60, borderRadius: 30, overflow: 'hidden',
@@ -764,23 +823,6 @@ const styles = StyleSheet.create({
     shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.4, shadowRadius: 8, elevation: 8,
   },
-
-  // Gallery
-  uploadCard: {
-    borderRadius: 24, padding: 20, marginBottom: 20, overflow: 'hidden',
-    borderWidth: 1, borderColor: colors.cardBorder, alignItems: 'center',
-  },
-  uploadPlaceholder: { alignItems: 'center', paddingVertical: 30 },
-  previewImage: { width: '100%', height: 180, borderRadius: 15, marginBottom: 20 },
-  uploadTitle: { color: colors.text, fontSize: 18, fontWeight: 'bold', marginTop: 15 },
-  uploadSubtitle: { color: colors.textSecondary, fontSize: 14, marginTop: 5 },
-  uploadBtn: {
-    backgroundColor: colors.primary, flexDirection: 'row', alignItems: 'center',
-    paddingVertical: 12, paddingHorizontal: 25, borderRadius: 30, width: '100%', justifyContent: 'center',
-  },
-  uploadBtnText: { color: '#fff', fontSize: 16, fontWeight: 'bold', marginLeft: 10 },
-  galleryGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  galleryThumb: { width: '48%', height: 120, borderRadius: 15, marginBottom: 15 },
 
   // Capsule cards
   capsuleCard: {
