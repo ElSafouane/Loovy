@@ -31,8 +31,16 @@ service cloud.firestore {
     // ─── Invite codes ────────────────────────────────────────────
     // Any signed-in user can read (to validate a code) and write their own code.
     match /inviteCodes/{code} {
-      allow read: if isSignedIn();
+      allow read:   if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
+      // Allow the joiner (someone who did NOT create the code) to write
+      // { joinerUid, coupleId, joinedAt } once — the code creator is
+      // listening via onSnapshot and will react to this update.
+      allow update: if isSignedIn()
+        && resource.data.createdBy != request.auth.uid   // only the joiner, not the creator
+        && !resource.data.keys().hasAny(['joinerUid'])   // can only join once
+        && request.resource.data.joinerUid == request.auth.uid; // joiner is the caller
+      // Only the original creator can delete their code (cleanup after handshake)
       allow delete: if isSignedIn() && resource.data.createdBy == request.auth.uid;
     }
 

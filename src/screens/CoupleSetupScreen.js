@@ -9,7 +9,7 @@ import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp, FadeIn } from 'react-native-reanimated';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { createInviteCode, joinCouple, setAnniversary } from '../services/couple';
+import { createInviteCode, joinCouple, setAnniversary, completeInviteHandshake } from '../services/couple';
 import { db } from '../config/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { colors, gradients } from '../theme/colors';
@@ -40,21 +40,28 @@ export default function CoupleSetupScreen({ user, onLinked }) {
 
   // ── Watch for partner joining (only active on 'generate' screen) ──
   useEffect(() => {
-    if (screen !== 'generate' || !user?.uid) return;
+    if (screen !== 'generate' || !myCode || !user?.uid) return;
 
-    // Listen to our own user doc; when coupleId is written by the partner
-    // joining, Firestore fires this callback and we advance automatically.
-    listenerRef.current = onSnapshot(doc(db, 'users', user.uid), (snap) => {
+    // Listen to the inviteCodes/{myCode} doc.
+    // When User B joins they write { joinerUid, coupleId } there.
+    // We then write coupleId to our OWN user doc (can't cross-write user docs)
+    // and delete the now-used invite code.
+    const unsubscribe = onSnapshot(doc(db, 'inviteCodes', myCode), async (snap) => {
       const data = snap.data();
-      if (data?.coupleId) {
-        listenerRef.current?.(); // unsubscribe
+      if (data?.joinerUid && data?.coupleId) {
+        unsubscribe();
+        try {
+          await completeInviteHandshake(user.uid, myCode, data.coupleId);
+        } catch (e) {
+          console.warn('[CoupleSetup] handshake error:', e.message);
+        }
         setCoupleId(data.coupleId);
         setScreen('anniversary');
       }
     });
 
-    return () => listenerRef.current?.();
-  }, [screen, user?.uid]);
+    return () => unsubscribe();
+  }, [screen, myCode, user?.uid]);
 
   // ── Generate a code ──────────────────────────────────────────
   const handleGenerate = async () => {
