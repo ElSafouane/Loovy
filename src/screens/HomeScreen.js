@@ -29,7 +29,7 @@ export default function HomeScreen() {
   const {
     myProfile, partner, couple,
     events: firestoreEvents,
-    updateMyProfile, addEvent, removeEvent,
+    updateMyProfile, addEvent, removeEvent, updateCouple,
   } = useCouple();
 
   // Derived profile values (fall back gracefully while data loads)
@@ -424,6 +424,20 @@ export default function HomeScreen() {
               </View>
             </BlurView>
           </Animated.View>
+
+          <TouchableOpacity
+            style={styles.heartBtn}
+            onPress={() => {
+              const { auth } = require('../config/firebase');
+              updateCouple({
+                lastHeartSentBy: auth.currentUser?.uid,
+                lastHeartAt:     new Date().toISOString(),
+              }).catch(() => {});
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.heartBtnText}>💕 Send a heart</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Events / Countdowns Header */}
@@ -766,6 +780,18 @@ const styles = StyleSheet.create({
   metaDivider: { color: colors.cardBorder, marginHorizontal: 8, fontSize: 12 },
 
   quickMessageBtn: { width: 45, height: 45, borderRadius: 22.5, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
+
+  heartBtn: {
+    marginTop: 10,
+    backgroundColor: 'rgba(233,64,87,0.18)',
+    borderRadius: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 18,
+    alignSelf: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(233,64,87,0.3)',
+  },
+  heartBtnText: { color: '#e94057', fontWeight: '700', fontSize: 13 },
 
   addCounterBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.primary, paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20 },
   addCounterText: { color: '#fff', fontSize: 14, fontWeight: 'bold', marginLeft: 4 },
