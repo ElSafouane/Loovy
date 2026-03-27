@@ -27,7 +27,7 @@ const LOVE_LANGUAGES = [
 
 export default function SettingsScreen() {
   // ── Live Firestore data ──────────────────────────────────
-  const { myProfile, partner, couple, updateMyProfile, updateCouple } = useCouple();
+  const { myProfile, partner, couple, coupleId, updateMyProfile, updateCouple } = useCouple();
 
   // Derived values from Firestore (fallback to empty while loading)
   const myName        = myProfile?.name         || '';
@@ -40,6 +40,14 @@ export default function SettingsScreen() {
   const specialPlace     = couple?.specialPlace  || '';
   const couplePromise    = couple?.promise       || '';
   const myLoveLanguage   = myProfile?.loveLanguage || null;
+
+  // ── Anniversary approval derived state ───────────────────────
+  const pendingAnnivChange     = couple?.pendingAnniversaryChange || null;
+  const myUid                  = myProfile?.uid || '';
+  // True when the partner (not me) has a pending proposal waiting for my answer
+  const hasPendingFromPartner  = !!(pendingAnnivChange && pendingAnnivChange.proposedBy !== myUid);
+  // True when I proposed but partner hasn't answered yet
+  const hasPendingFromMe       = !!(pendingAnnivChange && pendingAnnivChange.proposedBy === myUid);
 
   // UI-only state (preferences, modals, pending inputs)
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
@@ -112,9 +120,16 @@ export default function SettingsScreen() {
   };
 
   const proposeAnniversaryChange = async () => {
-    setPendingAnniversary(proposedAnniversary);
-    // Update anniversary on couple doc immediately (both partners see it)
-    await updateCouple({ anniversaryDate: proposedAnniversary.toISOString() });
+    // Write a pending approval request — the partner must accept before
+    // anniversaryDate is actually updated (enforced in Firestore rules too)
+    await updateCouple({
+      pendingAnniversaryChange: {
+        proposedDate: proposedAnniversary.toISOString(),
+        proposedBy:   myUid,
+        proposedAt:   new Date().toISOString(),
+      },
+    });
+    setPendingAnniversary(proposedAnniversary); // optimistic local indicator
     setAnniversaryModalOpen(false);
     setShowAnnivPicker(false);
   };
@@ -158,6 +173,42 @@ export default function SettingsScreen() {
           <Text style={styles.subGreeting}>Manage your relationship space</Text>
         </Animated.View>
 
+        {/* ── Anniversary change: action required card (shown to the partner) ── */}
+        {hasPendingFromPartner && (
+          <Animated.View entering={FadeInUp.duration(500)} style={styles.actionCard}>
+            <LinearGradient
+              colors={['rgba(233,64,87,0.22)', 'rgba(138,35,135,0.12)']}
+              style={[StyleSheet.absoluteFill, { borderRadius: 16 }]}
+            />
+            <Text style={styles.actionCardTitle}>📅 Anniversary change requested</Text>
+            <Text style={styles.actionCardBody}>
+              {partnerName} wants to change the anniversary to{' '}
+              <Text style={{ color: '#fff', fontWeight: '700' }}>
+                {new Date(pendingAnnivChange.proposedDate).toLocaleDateString()}
+              </Text>
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 14 }}>
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: '#e94057' }]}
+                onPress={async () => {
+                  await updateCouple({
+                    anniversaryDate:          pendingAnnivChange.proposedDate,
+                    pendingAnniversaryChange: null,
+                  });
+                }}
+              >
+                <Text style={styles.actionBtnText}>Approve ✓</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.actionBtn, { backgroundColor: 'rgba(255,255,255,0.12)' }]}
+                onPress={async () => updateCouple({ pendingAnniversaryChange: null })}
+              >
+                <Text style={styles.actionBtnText}>Decline</Text>
+              </TouchableOpacity>
+            </View>
+          </Animated.View>
+        )}
+
         {/* My Profile Card */}
         <Animated.View entering={FadeInUp.delay(100).duration(800)}>
           <Text style={styles.sectionTitle}>My Profile</Text>
@@ -186,12 +237,12 @@ export default function SettingsScreen() {
               iconColor={colors.primary}
               label="Anniversary Date"
               value={
-                pendingAnniversary
-                  ? anniversary.toLocaleDateString()
+                hasPendingFromMe
+                  ? `Proposed: ${new Date(pendingAnnivChange.proposedDate).toLocaleDateString()} ⏳`
                   : anniversary.toLocaleDateString()
               }
-              pending={!!pendingAnniversary}
-              pendingText={`Proposed ${proposedAnniversary.toDateString()} — waiting for ${partnerName}`}
+              pending={hasPendingFromMe}
+              pendingText={`Waiting for ${partnerName}'s approval`}
               onPress={() => { setProposedAnniversary(anniversary); setAnniversaryModalOpen(true); }}
             />
             <View style={styles.divider} />
@@ -594,9 +645,9 @@ export default function SettingsScreen() {
               onPress={async () => {
                 setBreakupModalOpen(false);
                 try {
-                  const { coupleId: cId } = couple || {};
+                  // coupleId comes directly from context (not the couple doc fields)
                   const uid = myProfile?.uid || require('../config/firebase').auth.currentUser?.uid;
-                  if (cId && uid) await breakupCouple(uid, cId);
+                  if (coupleId && uid) await breakupCouple(uid, coupleId);
                 } catch (e) {
                   Alert.alert('Error', e.message);
                 }
@@ -651,6 +702,20 @@ const styles = StyleSheet.create({
   deleteBtn: { marginTop: 10, alignSelf: 'center', padding: 15 },
   deleteBtnText: { color: colors.textSecondary, fontSize: 15, textDecorationLine: 'underline' },
   bottomSpacer: { height: 100 },
+
+  // Anniversary approval action card
+  actionCard: {
+    marginHorizontal: 20, marginBottom: 16, borderRadius: 16, padding: 18,
+    overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(233,64,87,0.35)',
+  },
+  actionCardTitle: { color: '#fff', fontWeight: '700', fontSize: 15, marginBottom: 6 },
+  actionCardBody:  { color: 'rgba(255,255,255,0.7)', fontSize: 13, lineHeight: 20 },
+  actionBtn:       { flex: 1, borderRadius: 10, paddingVertical: 10, alignItems: 'center' },
+  actionBtnText:   { color: '#fff', fontWeight: '700', fontSize: 13 },
+
+  // Breakup modal
+  secondaryBtn:     { paddingVertical: 12 },
+  secondaryBtnText: { fontSize: 14, textAlign: 'center' },
 
   modalBg: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20, backgroundColor: 'rgba(0,0,0,0.65)' },
   modalContent: { width: '100%', backgroundColor: '#24243e', borderRadius: 24, padding: 25, overflow: 'hidden', borderWidth: 1, borderColor: colors.cardBorder },
