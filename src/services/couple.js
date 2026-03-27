@@ -1,5 +1,5 @@
 import {
-  doc, setDoc, updateDoc, getDoc,
+  doc, setDoc, updateDoc, getDoc, deleteDoc,
   collection, query, where, getDocs,
   serverTimestamp,
 } from 'firebase/firestore';
@@ -14,36 +14,57 @@ const generateCode = () => {
 };
 
 // ─── Generate & store an invite code for the current user ────
+// Writes to inviteCodes/{code} so the generator can listen to it,
+// AND caches the code on the user doc for cleanup later.
 export const createInviteCode = async (uid) => {
   const code = generateCode();
+
+  // Primary store — inviteCodes collection (User A listens here)
+  await setDoc(doc(db, 'inviteCodes', code), {
+    createdBy:  uid,
+    createdAt:  serverTimestamp(),
+  });
+
+  // Cache on user doc for display / cleanup reference
   await updateDoc(doc(db, 'users', uid), { inviteCode: code });
+
   return code;
 };
 
 // ─── Join a couple using a partner's invite code ─────────────
+// Architecture note: we intentionally never write to the partner's user doc
+// because Firestore rules only allow a user to write their own doc.
+// Instead we update the inviteCodes/{code} doc with { joinerUid, coupleId }.
+// The code generator is listening to that doc and will write coupleId to
+// their own user doc when they see the update.
 export const joinCouple = async (myUid, rawCode) => {
   const code = rawCode.trim().toUpperCase();
 
-  const q = query(collection(db, 'users'), where('inviteCode', '==', code));
-  const snap = await getDocs(q);
+  // 1. Look up the invite code in the dedicated collection
+  const codeSnap = await getDoc(doc(db, 'inviteCodes', code));
 
-  if (snap.empty)
+  if (!codeSnap.exists())
     throw new Error('No account found with that code.\nAsk your partner to share their code from the app.');
 
-  const partnerSnap = snap.docs[0];
-  const partnerId   = partnerSnap.id;
-  const partnerData = partnerSnap.data();
+  const { createdBy: partnerId } = codeSnap.data();
 
   if (partnerId === myUid)
     throw new Error("That's your own code — share it with your partner instead.");
 
+  // 2. Verify partner exists and isn't already paired
+  const partnerSnap = await getDoc(doc(db, 'users', partnerId));
+  if (!partnerSnap.exists())
+    throw new Error('Partner account not found. Try asking them to regenerate their code.');
+
+  const partnerData = partnerSnap.data();
   if (partnerData.coupleId)
     throw new Error('This code is no longer valid. Your partner is already paired.');
 
-  // Deterministic coupleId so both sides produce the same string
-  const ids     = [myUid, partnerId].sort();
+  // 3. Deterministic coupleId so both sides produce the same string
+  const ids      = [myUid, partnerId].sort();
   const coupleId = `${ids[0]}_${ids[1]}`;
 
+  // 4. Create couple doc (allowed by the create rule that checks user1/user2)
   await setDoc(doc(db, 'couples', coupleId), {
     user1:           ids[0],
     user2:           ids[1],
@@ -51,13 +72,28 @@ export const joinCouple = async (myUid, rawCode) => {
     anniversaryDate: null,
   });
 
-  // Link both users and clear the now-used invite code
-  await Promise.all([
-    updateDoc(doc(db, 'users', myUid),    { coupleId, inviteCode: null }),
-    updateDoc(doc(db, 'users', partnerId), { coupleId, inviteCode: null }),
-  ]);
+  // 5. Write coupleId to joiner's OWN user doc (only allowed for own doc)
+  await updateDoc(doc(db, 'users', myUid), { coupleId, inviteCode: null });
+
+  // 6. Signal the code generator by writing joinerUid + coupleId to the
+  //    invite code doc. They're listening via onSnapshot and will write
+  //    coupleId to their own user doc when they see this.
+  await updateDoc(doc(db, 'inviteCodes', code), {
+    joinerUid: myUid,
+    coupleId,
+    joinedAt:  serverTimestamp(),
+  });
 
   return { coupleId, partnerId, partnerName: partnerData.name };
+};
+
+// ─── Called by the code generator after their listener fires ─
+// Writes coupleId to their own user doc and cleans up the invite code.
+export const completeInviteHandshake = async (uid, code, coupleId) => {
+  await Promise.all([
+    updateDoc(doc(db, 'users', uid), { coupleId, inviteCode: null }),
+    deleteDoc(doc(db, 'inviteCodes', code)),
+  ]);
 };
 
 // ─── Set (or update) the anniversary date for a couple ───────
