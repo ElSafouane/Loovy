@@ -4,53 +4,50 @@ import { View, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-import { auth }               from './src/config/firebase';
-import { getUserDoc }         from './src/services/auth';
-import TabNavigator           from './src/navigation/TabNavigator';
-import AuthScreen             from './src/screens/AuthScreen';
-import CoupleSetupScreen      from './src/screens/CoupleSetupScreen';
-import { colors }             from './src/theme/colors';
+import { auth }                from './src/config/firebase';
+import { getUserDoc }          from './src/services/auth';
+import { CoupleProvider }      from './src/context/CoupleContext';
+import TabNavigator            from './src/navigation/TabNavigator';
+import AuthScreen              from './src/screens/AuthScreen';
+import CoupleSetupScreen       from './src/screens/CoupleSetupScreen';
+import { colors }              from './src/theme/colors';
 
-// ── Auth states ─────────────────────────────────────────────
-// 'loading'        – checking Firebase session
-// 'unauthenticated'– no session → show login / register
-// 'no-couple'      – logged in but not yet paired with partner
-// 'ready'          – logged in + paired → show main app
+// ── App states ──────────────────────────────────────────────
+// 'loading'         – resolving Firebase session from cache
+// 'unauthenticated' – no session → AuthScreen
+// 'no-couple'       – logged in, not yet paired → CoupleSetupScreen
+// 'ready'           – logged in + coupleId → main app
 // ────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [appState, setAppState] = useState('loading');
+  const [appState,     setAppState]     = useState('loading');
   const [firebaseUser, setFirebaseUser] = useState(null);
+  const [coupleId,     setCoupleId]     = useState(null);
 
   useEffect(() => {
-    // onAuthStateChanged resolves immediately from the persisted session
-    // (AsyncStorage cache), so there's no blank flash on second launch.
-    const unsubscribe = auth.onAuthStateChanged(async (fbUser) => {
+    const unsub = auth.onAuthStateChanged(async (fbUser) => {
       if (!fbUser) {
         setFirebaseUser(null);
+        setCoupleId(null);
         setAppState('unauthenticated');
         return;
       }
-
       setFirebaseUser(fbUser);
-
       try {
         const userDoc = await getUserDoc(fbUser.uid);
         if (userDoc?.coupleId) {
+          setCoupleId(userDoc.coupleId);
           setAppState('ready');
         } else {
           setAppState('no-couple');
         }
       } catch {
-        // Firestore unreachable (offline, first-time, etc.) — still let them in
-        setAppState('ready');
+        setAppState('no-couple');
       }
     });
-
-    return unsubscribe;
+    return unsub;
   }, []);
 
-  // ── Loading spinner ────────────────────────────────────────
   if (appState === 'loading') {
     return (
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background }}>
@@ -63,33 +60,36 @@ export default function App() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar style="light" />
 
-      {/* ── Not logged in ── */}
       {appState === 'unauthenticated' && (
         <AuthScreen onAuthenticated={async (user) => {
-          // user is passed directly from signIn/signUp — no race condition
           setFirebaseUser(user);
           try {
             const userDoc = await getUserDoc(user.uid);
-            setAppState(userDoc?.coupleId ? 'ready' : 'no-couple');
+            if (userDoc?.coupleId) {
+              setCoupleId(userDoc.coupleId);
+              setAppState('ready');
+            } else {
+              setAppState('no-couple');
+            }
           } catch {
             setAppState('no-couple');
           }
         }} />
       )}
 
-      {/* ── Logged in but not yet paired ── */}
       {appState === 'no-couple' && firebaseUser && (
         <CoupleSetupScreen
           user={firebaseUser}
-          onLinked={() => setAppState('ready')}
+          onLinked={(id) => { setCoupleId(id); setAppState('ready'); }}
         />
       )}
 
-      {/* ── Fully set up — main app ── */}
-      {appState === 'ready' && (
-        <NavigationContainer>
-          <TabNavigator />
-        </NavigationContainer>
+      {appState === 'ready' && coupleId && (
+        <CoupleProvider coupleId={coupleId}>
+          <NavigationContainer>
+            <TabNavigator />
+          </NavigationContainer>
+        </CoupleProvider>
       )}
     </GestureHandlerRootView>
   );

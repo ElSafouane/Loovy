@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Modal, TextInput, Platform, KeyboardAvoidingView } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -6,21 +6,11 @@ import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInUp, FadeInDown, SlideInRight, SlideInLeft, useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming } from 'react-native-reanimated';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Swipeable } from 'react-native-gesture-handler';
-import { useFocusEffect } from '@react-navigation/native';
 import * as Calendar from 'expo-calendar';
 import * as Location from 'expo-location';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path } from 'react-native-svg';
+import { useCouple } from '../context/CoupleContext';
 import { colors, gradients } from '../theme/colors';
-
-// MOCK DATA
-const initialPartner = {
-  avatar: 'https://media.licdn.com/dms/image/v2/D4D03AQHgGWAvaZNIsA/profile-displayphoto-scale_200_200/B4DZigiIMMH8AY-/0/1755039958347?e=1775692800&v=beta&t=XQnJy3wA_UXrOsUdaKQounQ173nVq_gUPJ0WbnIGAh4',
-  mood: 'Misses you 🥺',
-  location: 'Sheffield, UK',
-  coords: { latitude: 53.3808, longitude: -1.46423 },
-  timezoneOffset: 6, // hours ahead of user
-};
 
 const defaultMeetingDate = new Date();
 defaultMeetingDate.setDate(defaultMeetingDate.getDate() + 14);
@@ -34,13 +24,42 @@ const MOODS = [
   { id: 'angry', label: 'Angry', emoji: '😠' },
 ];
 
+const defaultMeetingDate = new Date();
+defaultMeetingDate.setDate(defaultMeetingDate.getDate() + 14);
+
 export default function HomeScreen() {
-  const [partnerName, setPartnerName] = useState('Partner');
-  const [partner, setPartner] = useState(initialPartner);
-  const [myStatus, setMyStatus] = useState('Thinking of you ❤️');
-  const [relationshipStartDate, setRelationshipStartDate] = useState(new Date());
-  const [myAvatar, setMyAvatar] = useState('https://i.pravatar.cc/150?u=me');
-  const [myName, setMyName] = useState('');
+  // ── Live Firestore data via context ──────────────────────
+  const {
+    myProfile, partner, couple,
+    events: firestoreEvents,
+    updateMyProfile, addEvent, removeEvent,
+  } = useCouple();
+
+  // Derived profile values (fall back gracefully while data loads)
+  const myName    = myProfile?.name    || '';
+  const myAvatar  = myProfile?.avatarUrl || 'https://i.pravatar.cc/150?u=me';
+  const myStatus  = myProfile?.status  || 'Thinking of you ❤️';
+  const partnerName = myProfile?.partnerNickname || partner?.name || 'Partner';
+
+  const relationshipStartDate = couple?.anniversaryDate
+    ? new Date(couple.anniversaryDate)
+    : new Date();
+
+  // Partner data (from their live Firestore doc)
+  const partnerAvatar   = partner?.avatarUrl || 'https://i.pravatar.cc/150?u=partner';
+  const partnerMood     = partner?.status    || '…';
+  const partnerLocation = partner?.locationStr || '—';
+  const partnerCoords   = partner?.coords    || null;
+  // Relative timezone difference (hours partner is ahead of me)
+  const myUtcOffset      = -(new Date().getTimezoneOffset() / 60);
+  const partnerUtcOffset = partner?.utcOffset ?? myUtcOffset;
+  const timezoneRelative = partnerUtcOffset - myUtcOffset;
+
+  // Events: use Firestore events (shared with partner), parsed to Date objects
+  const events = firestoreEvents.map(e => ({
+    ...e,
+    date: new Date(e.date),
+  }));
 
   // Heartbeat animation for partner avatar
   const heartScale = useSharedValue(1);
@@ -64,10 +83,6 @@ export default function HomeScreen() {
   const [myCoords, setMyCoords] = useState(null);
   const [actualDistance, setActualDistance] = useState('Calculations...');
 
-  const [events, setEvents] = useState([
-    { id: '1', title: 'Next Meeting', date: defaultMeetingDate, icon: 'airplane' }
-  ]);
-
   const [now, setNow] = useState(new Date());
 
   // Modals state
@@ -87,64 +102,47 @@ export default function HomeScreen() {
   const [customStatus, setCustomStatus] = useState('');
   const [tempPartnerName, setTempPartnerName] = useState(partnerName);
 
-  // Profile loader — called on mount and every time the tab comes into focus
-  const loadProfile = useCallback(() => {
-    AsyncStorage.multiGet(['@partnerName', '@anniversaryDate', '@myStatus', '@myAvatar', '@myName']).then(values => {
-      const db = Object.fromEntries(values);
-      if (db['@partnerName']) setPartnerName(db['@partnerName']);
-      if (db['@anniversaryDate']) setRelationshipStartDate(new Date(db['@anniversaryDate']));
-      if (db['@myStatus']) setMyStatus(db['@myStatus']);
-      if (db['@myAvatar']) setMyAvatar(db['@myAvatar']);
-      if (db['@myName']) setMyName(db['@myName']);
-    });
-  }, []);
-
-  // Time Loop
+  // Clock — ticks every second
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 1000);
-    loadProfile();
     return () => clearInterval(timer);
   }, []);
 
-  // Re-sync profile whenever this tab is focused (picks up Settings changes)
-  useFocusEffect(loadProfile);
-
-  // GPS fetch
+  // GPS — fetch once, update local state AND write to Firestore so partner sees it
   useEffect(() => {
     (async () => {
-      let { status } = await Location.requestForegroundPermissionsAsync();
+      const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
         setMyLocationStr('Location Denied');
         setActualDistance('Unknown');
         return;
       }
-
-      let location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const location = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      const { latitude, longitude } = location.coords;
       setMyCoords(location.coords);
 
-      let reverseGeocode = await Location.reverseGeocodeAsync({
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude
-      });
+      const reverseGeocode = await Location.reverseGeocodeAsync({ latitude, longitude });
+      const locationStr = reverseGeocode?.[0]
+        ? `${reverseGeocode[0].city || 'Unknown City'}, ${reverseGeocode[0].country || ''}`
+        : 'GPS Unknown';
 
-      if (reverseGeocode && reverseGeocode.length > 0) {
-        const { city, country } = reverseGeocode[0];
-        setMyLocationStr(`${city || 'Unknown City'}, ${country || ''}`);
-      } else {
-        setMyLocationStr('GPS Unknown');
-      }
+      setMyLocationStr(locationStr);
+
+      // Persist to Firestore so the partner's Home screen shows our real location
+      const utcOffset = -(new Date().getTimezoneOffset() / 60);
+      updateMyProfile({ coords: { latitude, longitude }, locationStr, utcOffset }).catch(() => {});
     })();
   }, []);
 
-  // Haversine Distance Calc
+  // Haversine Distance Calc — uses partner's Firestore coords
   useEffect(() => {
-    if (myCoords && partner.coords) {
+    if (myCoords && partnerCoords) {
       const toRad = x => (x * Math.PI) / 180;
       const R = 6371; // km
-      const dLat = toRad(partner.coords.latitude - myCoords.latitude);
-      const dLon = toRad(partner.coords.longitude - myCoords.longitude);
+      const dLat = toRad(partnerCoords.latitude - myCoords.latitude);
+      const dLon = toRad(partnerCoords.longitude - myCoords.longitude);
       const lat1 = toRad(myCoords.latitude);
-      const lat2 = toRad(partner.coords.latitude);
+      const lat2 = toRad(partnerCoords.latitude);
 
       const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
         Math.sin(dLon / 2) * Math.sin(dLon / 2) * Math.cos(lat1) * Math.cos(lat2);
@@ -153,23 +151,22 @@ export default function HomeScreen() {
       const distance = Math.round(R * c);
       setActualDistance(`${distance.toLocaleString()} km`);
     }
-  }, [myCoords, partner.coords]);
+  }, [myCoords, partnerCoords]);
 
-  const saveNewEvent = () => {
+  const saveNewEvent = async () => {
     if (!newEventTitle.trim()) return alert('Please enter an event name.');
 
-    // Merge picked date + picked time into one Date
+    // Merge picked date + picked time into one DateTime
     const combined = new Date(newEventDate);
     combined.setHours(newEventTime.getHours(), newEventTime.getMinutes(), 0, 0);
 
-    const newEvent = {
-      id: Date.now().toString(),
-      title: newEventTitle,
-      date: combined,
-      icon: newEventIcon,
-    };
+    // Write to Firestore — instantly visible to both partners
+    await addEvent({
+      title: newEventTitle.trim(),
+      date:  combined.toISOString(),
+      icon:  newEventIcon,
+    });
 
-    setEvents([newEvent, ...events]);
     setEventModalVisible(false);
     setNewEventTitle('');
     setNewEventDate(new Date());
@@ -179,9 +176,7 @@ export default function HomeScreen() {
     setShowTimePicker(false);
   };
 
-  const deleteEvent = (id) => {
-    setEvents(events.filter(e => e.id !== id));
-  };
+  const deleteEvent = (id) => removeEvent(id);
 
   const addToCalendar = async (evt) => {
     try {
@@ -214,22 +209,23 @@ export default function HomeScreen() {
   };
 
   const updateMyStatus = (moodObj) => {
-    setMyStatus(`${moodObj.label} ${moodObj.emoji}`);
+    const status = `${moodObj.label} ${moodObj.emoji}`;
+    updateMyProfile({ status }).catch(() => {});
     setStatusModalVisible(false);
   };
 
   const updateCustomStatus = () => {
     if (customStatus.trim().length > 0) {
-      setMyStatus(customStatus);
+      updateMyProfile({ status: customStatus.trim() }).catch(() => {});
       setStatusModalVisible(false);
       setCustomStatus('');
     }
   };
 
+  // "Partner name" is now a nickname stored on MY profile doc
   const savePartnerName = async () => {
     if (tempPartnerName.trim().length > 0) {
-      setPartnerName(tempPartnerName);
-      await AsyncStorage.setItem('@partnerName', tempPartnerName);
+      await updateMyProfile({ partnerNickname: tempPartnerName.trim() });
     }
     setPartnerNameModalVisible(false);
   };
@@ -276,24 +272,23 @@ export default function HomeScreen() {
 
   // Time calculations
   const myTime = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const partnerDate = new Date(now.getTime() + partner.timezoneOffset * 3600 * 1000);
+  const partnerDate = new Date(now.getTime() + timezoneRelative * 3600 * 1000);
   const partnerTime = partnerDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   // Relationship days
-  const daysTogether = Math.floor((now.getTime() - relationshipStartDate.getTime()) / (1000 * 60 * 60 * 24));
-  const startDateStr = relationshipStartDate.toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+  const daysTogether = Math.max(0, Math.floor((now.getTime() - relationshipStartDate.getTime()) / (1000 * 60 * 60 * 24)));
 
-  // Next meeting countdown (use first event that hasn't passed)
+  // Next meeting countdown (first future event)
   const nextMeeting = events.find(e => e.date.getTime() > now.getTime());
   const daysToMeeting = nextMeeting
     ? Math.ceil((nextMeeting.date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
     : null;
 
-  // Time zone gap
-  const tzHours = Math.abs(partner.timezoneOffset);
-  const tzLabel = partner.timezoneOffset > 0
+  // Time zone gap label
+  const tzHours = Math.abs(timezoneRelative);
+  const tzLabel = timezoneRelative > 0
     ? `${partnerName} is ${tzHours}h ahead`
-    : partner.timezoneOffset < 0
+    : timezoneRelative < 0
       ? `${partnerName} is ${tzHours}h behind`
       : 'Same timezone ✨';
 
@@ -351,7 +346,7 @@ export default function HomeScreen() {
               </View>
 
               <View style={styles.heroAvatarCol}>
-                <Animated.Image source={{ uri: partner.avatar }} style={[styles.heroAvatar, heartbeatStyle]} />
+                <Animated.Image source={{ uri: partnerAvatar }} style={[styles.heroAvatar, heartbeatStyle]} />
                 <Text style={styles.heroAvatarName}>{partnerName}</Text>
               </View>
             </View>
@@ -412,18 +407,18 @@ export default function HomeScreen() {
             <BlurView intensity={20} tint="light" style={styles.glassCard}>
               <LinearGradient colors={gradients.card} style={StyleSheet.absoluteFill} />
               <View style={styles.partnerInfo}>
-                <Animated.Image source={{ uri: partner.avatar }} style={[styles.avatar, heartbeatStyle]} />
+                <Animated.Image source={{ uri: partnerAvatar }} style={[styles.avatar, heartbeatStyle]} />
                 <View style={styles.partnerText}>
                   <Text style={styles.partnerName}>{partnerName}</Text>
                   <View style={styles.moodBadgePartner}>
-                    <Text style={styles.moodTextPartner}>{partner.mood}</Text>
+                    <Text style={styles.moodTextPartner}>{partnerMood}</Text>
                   </View>
                   <View style={styles.metaRow}>
                     <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
                     <Text style={styles.metaText}>{partnerTime}</Text>
                     <Text style={styles.metaDivider}>|</Text>
                     <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
-                    <Text style={styles.metaText}>{partner.location}</Text>
+                    <Text style={styles.metaText}>{partnerLocation}</Text>
                   </View>
                 </View>
                 <TouchableOpacity style={styles.quickMessageBtn}>
@@ -538,9 +533,9 @@ export default function HomeScreen() {
               </View>
 
               <View style={styles.locationBox}>
-                <Image source={{ uri: partner.avatar }} style={styles.locationAvatar} />
+                <Image source={{ uri: partnerAvatar }} style={styles.locationAvatar} />
                 <Text style={styles.locationLabel}>{partnerName}</Text>
-                <Text style={styles.locationCity}>{partner.location}</Text>
+                <Text style={styles.locationCity}>{partnerLocation}</Text>
               </View>
 
             </View>

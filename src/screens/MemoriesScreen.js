@@ -8,16 +8,24 @@ import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInUp, FadeInRight, FadeIn } from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useCouple } from '../context/CoupleContext';
 import { colors, gradients } from '../theme/colors';
 
 export default function MemoriesScreen() {
+  // ── Live Firestore data ──────────────────────────────────
+  const {
+    memories, capsules, partner, myProfile,
+    addMemory, updateMemory, removeMemory,
+    addCapsule, updateCapsule,
+  } = useCouple();
+
+  const partnerName = myProfile?.partnerNickname || partner?.name || 'Partner';
+
   const [activeSegment, setActiveSegment] = useState('Timeline');
   const [editingMemory, setEditingMemory] = useState(null);
 
-  // ─── Memories ───
-  const [memories, setMemories] = useState([]);
+  // ─── Memory form ───
   const [showAddMemory, setShowAddMemory] = useState(false);
   const [selectedMemory, setSelectedMemory] = useState(null);
   const [newTitle, setNewTitle] = useState('');
@@ -28,12 +36,10 @@ export default function MemoriesScreen() {
   const [mediaType, setMediaType] = useState('emoji');
   const [showMemDatePicker, setShowMemDatePicker] = useState(false);
 
-  // ─── Capsules ───
-  const [capsules, setCapsules] = useState([]);
+  // ─── Capsule form ───
   const [showCreateCapsule, setShowCreateCapsule] = useState(false);
   const [selectedCapsule, setSelectedCapsule] = useState(null);
   const [countdown, setCountdown] = useState({});
-  const [partnerName, setPartnerName] = useState('Partner');
   const [capTitle, setCapTitle] = useState('');
   const [capMessage, setCapMessage] = useState('');
   const [capUnlockDate, setCapUnlockDate] = useState(() => {
@@ -43,15 +49,6 @@ export default function MemoriesScreen() {
   });
   const [capAuthor, setCapAuthor] = useState('me');
   const [showCapDatePicker, setShowCapDatePicker] = useState(false);
-
-  // ─── Load on mount ───
-  useEffect(() => {
-    AsyncStorage.multiGet(['@memories', '@capsules', '@partnerName']).then(pairs => {
-      if (pairs[0][1]) setMemories(JSON.parse(pairs[0][1]));
-      if (pairs[1][1]) setCapsules(JSON.parse(pairs[1][1]));
-      if (pairs[2][1]) setPartnerName(pairs[2][1]);
-    }).catch(() => {});
-  }, []);
 
   // ─── Live countdown (only when Capsules tab is active) ───
   useEffect(() => {
@@ -104,19 +101,17 @@ export default function MemoriesScreen() {
   const saveMemory = async () => {
     if (!newTitle.trim()) return Alert.alert('Title required', 'Please add a title for this memory.');
     const memoryData = {
-      id: editingMemory ? editingMemory.id : Date.now().toString(),
-      title: newTitle.trim(),
+      title:       newTitle.trim(),
       description: newDescription.trim(),
-      date: newDate.toISOString(),
-      emoji: mediaType === 'emoji' ? newEmoji.trim() : null,
-      image: mediaType === 'image' ? newImage : null,
+      date:        newDate.toISOString(),
+      emoji:       mediaType === 'emoji' ? newEmoji.trim() : null,
+      image:       mediaType === 'image' ? newImage : null,
     };
-    const updated = editingMemory
-      ? memories.map(m => m.id === editingMemory.id ? memoryData : m)
-          .sort((a, b) => new Date(a.date) - new Date(b.date))
-      : [...memories, memoryData].sort((a, b) => new Date(a.date) - new Date(b.date));
-    await AsyncStorage.setItem('@memories', JSON.stringify(updated));
-    setMemories(updated);
+    if (editingMemory) {
+      await updateMemory(editingMemory.id, memoryData);
+    } else {
+      await addMemory(memoryData);
+    }
     resetMemoryForm();
     setShowAddMemory(false);
   };
@@ -138,15 +133,7 @@ export default function MemoriesScreen() {
       `Remove "${mem.title}" from your timeline?`,
       [
         { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            const updated = memories.filter(m => m.id !== mem.id);
-            await AsyncStorage.setItem('@memories', JSON.stringify(updated));
-            setMemories(updated);
-          },
-        },
+        { text: 'Delete', style: 'destructive', onPress: () => removeMemory(mem.id) },
       ]
     );
   };
@@ -157,7 +144,6 @@ export default function MemoriesScreen() {
     if (!capMessage.trim()) return Alert.alert('Message required');
     if (capUnlockDate <= new Date()) return Alert.alert('Invalid date', 'Unlock date must be in the future.');
 
-    // ⚠️ Confirmation: once sent, capsules cannot be edited or deleted
     Alert.alert(
       '🔒 Send Capsule?',
       'Once sent, this capsule cannot be edited or deleted. Are you sure you want to seal it?',
@@ -167,18 +153,14 @@ export default function MemoriesScreen() {
           text: 'Send it 💌',
           style: 'default',
           onPress: async () => {
-            const capsule = {
-              id: Date.now().toString(),
-              title: capTitle.trim(),
-              message: capMessage.trim(),
-              unlockDate: capUnlockDate.toISOString(),
+            await addCapsule({
+              title:       capTitle.trim(),
+              message:     capMessage.trim(),
+              unlockDate:  capUnlockDate.toISOString(),
               createdDate: new Date().toISOString(),
-              author: capAuthor,
-              isOpened: false,
-            };
-            const updated = [...capsules, capsule].sort((a, b) => new Date(a.unlockDate) - new Date(b.unlockDate));
-            await AsyncStorage.setItem('@capsules', JSON.stringify(updated));
-            setCapsules(updated);
+              author:      capAuthor,
+              isOpened:    false,
+            });
             setCapTitle(''); setCapMessage(''); setCapAuthor('me'); setShowCapDatePicker(false);
             setCapUnlockDate(() => { const d = new Date(); d.setDate(d.getDate() + 7); return d; });
             setShowCreateCapsule(false);
@@ -190,9 +172,7 @@ export default function MemoriesScreen() {
   };
 
   const markOpened = async (capsule) => {
-    const updated = capsules.map(c => c.id === capsule.id ? { ...c, isOpened: true } : c);
-    await AsyncStorage.setItem('@capsules', JSON.stringify(updated));
-    setCapsules(updated);
+    await updateCapsule(capsule.id, { isOpened: true });
     setSelectedCapsule({ ...capsule, isOpened: true });
   };
 
