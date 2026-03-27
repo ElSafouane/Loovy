@@ -65,11 +65,15 @@ export default function App() {
 
       {/* ── Not logged in ── */}
       {appState === 'unauthenticated' && (
-        <AuthScreen onAuthenticated={async () => {
-          const user = auth.currentUser;
-          const doc  = await getUserDoc(user.uid);
+        <AuthScreen onAuthenticated={async (user) => {
+          // user is passed directly from signIn/signUp — no race condition
           setFirebaseUser(user);
-          setAppState(doc?.coupleId ? 'ready' : 'no-couple');
+          try {
+            const userDoc = await getUserDoc(user.uid);
+            setAppState(userDoc?.coupleId ? 'ready' : 'no-couple');
+          } catch {
+            setAppState('no-couple');
+          }
         }} />
       )}
 
