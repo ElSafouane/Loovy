@@ -78,8 +78,10 @@ export default function HomeScreen() {
   // New Event Form
   const [newEventTitle, setNewEventTitle] = useState('');
   const [newEventDate, setNewEventDate] = useState(new Date());
+  const [newEventTime, setNewEventTime] = useState(new Date());
   const [newEventIcon, setNewEventIcon] = useState('star');
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   // Status Form
   const [customStatus, setCustomStatus] = useState('');
@@ -156,10 +158,14 @@ export default function HomeScreen() {
   const saveNewEvent = () => {
     if (!newEventTitle.trim()) return alert('Please enter an event name.');
 
+    // Merge picked date + picked time into one Date
+    const combined = new Date(newEventDate);
+    combined.setHours(newEventTime.getHours(), newEventTime.getMinutes(), 0, 0);
+
     const newEvent = {
       id: Date.now().toString(),
       title: newEventTitle,
-      date: newEventDate,
+      date: combined,
       icon: newEventIcon,
     };
 
@@ -167,7 +173,10 @@ export default function HomeScreen() {
     setEventModalVisible(false);
     setNewEventTitle('');
     setNewEventDate(new Date());
+    setNewEventTime(new Date());
     setNewEventIcon('star');
+    setShowDatePicker(false);
+    setShowTimePicker(false);
   };
 
   const deleteEvent = (id) => {
@@ -240,6 +249,11 @@ export default function HomeScreen() {
   const onDateChange = (event, selectedDate) => {
     if (Platform.OS === 'android') setShowDatePicker(false);
     if (selectedDate) setNewEventDate(selectedDate);
+  };
+
+  const onTimeChange = (event, selectedTime) => {
+    if (Platform.OS === 'android') setShowTimePicker(false);
+    if (selectedTime) setNewEventTime(selectedTime);
   };
 
   const renderRightActions = (id) => (
@@ -446,6 +460,11 @@ export default function HomeScreen() {
                   <LinearGradient colors={index === 0 ? gradients.love : gradients.card} style={[StyleSheet.absoluteFill, { opacity: index === 0 ? 0.2 : 1 }]} />
 
                   <Text style={styles.countdownTitle}>{evt.title} <Ionicons name={evt.icon} size={20} /></Text>
+                  <Text style={styles.countdownSubtitle}>
+                    {new Date(evt.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                    {' · '}
+                    {new Date(evt.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
 
                   {cd.isPast ? (
                     <Text style={styles.pastEventText}>This event has passed.</Text>
@@ -568,6 +587,31 @@ export default function HomeScreen() {
                   {Platform.OS === 'ios' && (
                     <TouchableOpacity onPress={() => setShowDatePicker(false)} style={styles.doneBtn}>
                       <Text style={styles.doneBtnText}>Confirm Date</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
+
+              {/* Time picker row */}
+              {!showTimePicker ? (
+                <TouchableOpacity style={styles.inputContainer} onPress={() => setShowTimePicker(true)}>
+                  <Ionicons name="time-outline" size={20} color={colors.primary} style={styles.inputIcon} />
+                  <Text style={[styles.input, { paddingTop: Platform.OS === 'ios' ? 14 : 0 }]}>
+                    {newEventTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={styles.datePickerContainer}>
+                  <DateTimePicker
+                    value={newEventTime}
+                    mode="time"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    onChange={onTimeChange}
+                    textColor="white"
+                  />
+                  {Platform.OS === 'ios' && (
+                    <TouchableOpacity onPress={() => setShowTimePicker(false)} style={styles.doneBtn}>
+                      <Text style={styles.doneBtnText}>Confirm Time</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -734,7 +778,8 @@ const styles = StyleSheet.create({
   addCounterText: { color: '#fff', fontSize: 14, fontWeight: 'bold', marginLeft: 4 },
 
   countdownCard: { borderRadius: 24, padding: 25, overflow: 'hidden', borderWidth: 1, borderColor: colors.cardBorder, alignItems: 'center', marginBottom: 15 },
-  countdownTitle: { color: colors.text, fontSize: 20, fontWeight: 'bold', marginBottom: 20 },
+  countdownTitle: { color: colors.text, fontSize: 20, fontWeight: 'bold', marginBottom: 6 },
+  countdownSubtitle: { color: colors.textSecondary, fontSize: 12, marginBottom: 16 },
   pastEventText: { color: colors.textSecondary, fontSize: 16, fontStyle: 'italic', marginBottom: 10 },
   timerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', marginBottom: 10, width: '100%' },
   timerBox: { alignItems: 'center', width: 60 },
