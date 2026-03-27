@@ -24,9 +24,6 @@ const MOODS = [
   { id: 'angry', label: 'Angry', emoji: '😠' },
 ];
 
-const defaultMeetingDate = new Date();
-defaultMeetingDate.setDate(defaultMeetingDate.getDate() + 14);
-
 export default function HomeScreen() {
   // ── Live Firestore data via context ──────────────────────
   const {
