@@ -1,14 +1,17 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, Alert, Platform, Clipboard,
+  ActivityIndicator, Alert, Platform,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp, FadeIn } from 'react-native-reanimated';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { createInviteCode, joinCouple, setAnniversary } from '../services/couple';
+import { db } from '../config/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
 import { colors, gradients } from '../theme/colors';
 
 // ──────────────────────────────────────────────────────────────
@@ -25,6 +28,7 @@ export default function CoupleSetupScreen({ user, onLinked }) {
 
   // Generate flow
   const [myCode,      setMyCode]      = useState('');
+  const listenerRef = useRef(null);
 
   // Enter flow
   const [inputCode,   setInputCode]   = useState('');
@@ -33,6 +37,24 @@ export default function CoupleSetupScreen({ user, onLinked }) {
   const [coupleId,    setCoupleId]    = useState('');
   const [anniversary, setAnniversaryDate] = useState(new Date());
   const [showPicker,  setShowPicker]  = useState(false);
+
+  // ── Watch for partner joining (only active on 'generate' screen) ──
+  useEffect(() => {
+    if (screen !== 'generate' || !user?.uid) return;
+
+    // Listen to our own user doc; when coupleId is written by the partner
+    // joining, Firestore fires this callback and we advance automatically.
+    listenerRef.current = onSnapshot(doc(db, 'users', user.uid), (snap) => {
+      const data = snap.data();
+      if (data?.coupleId) {
+        listenerRef.current?.(); // unsubscribe
+        setCoupleId(data.coupleId);
+        setScreen('anniversary');
+      }
+    });
+
+    return () => listenerRef.current?.();
+  }, [screen, user?.uid]);
 
   // ── Generate a code ──────────────────────────────────────────
   const handleGenerate = async () => {
@@ -78,8 +100,8 @@ export default function CoupleSetupScreen({ user, onLinked }) {
     }
   };
 
-  const copyCode = () => {
-    Clipboard.setString(myCode);
+  const copyCode = async () => {
+    await Clipboard.setStringAsync(myCode);
     Alert.alert('Copied! 📋', `Share the code "${myCode}" with your partner.`);
   };
 
@@ -151,8 +173,8 @@ export default function CoupleSetupScreen({ user, onLinked }) {
           </TouchableOpacity>
 
           <Text style={styles.waitingText}>
-            ⏳ Waiting for your partner to join…{'\n'}
-            This screen will auto-update once they connect.
+            ⏳ Waiting for your partner to enter this code…{'\n'}
+            The app will jump forward automatically the moment they join.
           </Text>
 
           <TouchableOpacity style={styles.secondaryBtn} onPress={() => setScreen('choose')}>

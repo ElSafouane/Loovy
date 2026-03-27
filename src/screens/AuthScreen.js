@@ -30,12 +30,11 @@ export default function AuthScreen({ onAuthenticated }) {
 
     setLoading(true);
     try {
-      if (isRegister) {
-        await signUp(name.trim(), email.trim(), password);
-      } else {
-        await signIn(email.trim(), password);
-      }
-      onAuthenticated();
+      const user = isRegister
+        ? await signUp(name.trim(), email.trim(), password)
+        : await signIn(email.trim(), password);
+      // Pass the Firebase user directly — no need for auth.currentUser in App.js
+      onAuthenticated(user);
     } catch (e) {
       const msg = e.code === 'auth/email-already-in-use' ? 'This email is already registered. Try signing in.'
         : e.code === 'auth/user-not-found'               ? 'No account found with this email.'
