@@ -36,6 +36,7 @@ export default function CoupleSetupScreen({ user, onLinked }) {
   const [coupleId,    setCoupleId]    = useState('');
   const [anniversary, setAnniversaryDate] = useState(new Date());
   const [showPicker,  setShowPicker]  = useState(false);
+  const [isInitiator, setIsInitiator] = useState(false);
 
   // ── Watch for partner joining (only active on 'generate' screen) ──
   useEffect(() => {
@@ -55,6 +56,7 @@ export default function CoupleSetupScreen({ user, onLinked }) {
           // would appear linked in UI but be locked out after any restart.
           await completeInviteHandshake(user.uid, myCode, data.coupleId);
           setCoupleId(data.coupleId);
+          setIsInitiator(true);
           setScreen('anniversary');
         } catch (e) {
           // Handshake failed — stay on generate screen and alert the user
@@ -92,6 +94,7 @@ export default function CoupleSetupScreen({ user, onLinked }) {
     try {
       const result = await joinCouple(user.uid, inputCode);
       setCoupleId(result.coupleId);
+      setIsInitiator(false);
       setScreen('anniversary');
     } catch (e) {
       Alert.alert('Invalid code 😕', e.message);
@@ -254,50 +257,77 @@ export default function CoupleSetupScreen({ user, onLinked }) {
             When did your story begin? (You can always change this in Settings.)
           </Text>
 
-          {!showPicker ? (
-            <TouchableOpacity style={styles.field} onPress={() => setShowPicker(true)}>
-              <Ionicons name="calendar-outline" size={20} color={colors.primary} style={{ marginRight: 10 }} />
-              <Text style={[styles.input, { paddingTop: Platform.OS === 'ios' ? 14 : 0, color: '#fff' }]}>
-                {anniversary.toDateString()}
-              </Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.pickerWrap}>
-              <DateTimePicker
-                value={anniversary}
-                mode="date"
-                display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                maximumDate={new Date()}
-                textColor="#fff"
-                onChange={(_, d) => {
-                  if (Platform.OS === 'android') setShowPicker(false);
-                  if (d) setAnniversaryDate(d);
-                }}
-              />
-              {Platform.OS === 'ios' && (
-                <TouchableOpacity onPress={() => setShowPicker(false)} style={styles.confirmBtn}>
-                  <Text style={styles.confirmBtnText}>Confirm</Text>
+          {isInitiator ? (
+            <>
+              {!showPicker ? (
+                <TouchableOpacity style={styles.field} onPress={() => setShowPicker(true)}>
+                  <Ionicons name="calendar-outline" size={20} color={colors.primary} style={{ marginRight: 10 }} />
+                  <Text style={[styles.input, { paddingTop: Platform.OS === 'ios' ? 14 : 0, color: '#fff' }]}>
+                    {anniversary.toDateString()}
+                  </Text>
                 </TouchableOpacity>
+              ) : (
+                <View style={styles.pickerWrap}>
+                  <DateTimePicker
+                    value={anniversary}
+                    mode="date"
+                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                    maximumDate={new Date()}
+                    textColor="#fff"
+                    onChange={(_, d) => {
+                      if (Platform.OS === 'android') setShowPicker(false);
+                      if (d) setAnniversaryDate(d);
+                    }}
+                  />
+                  {Platform.OS === 'ios' && (
+                    <TouchableOpacity onPress={() => setShowPicker(false)} style={styles.confirmBtn}>
+                      <Text style={styles.confirmBtnText}>Confirm</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
               )}
-            </View>
+
+              <TouchableOpacity
+                style={styles.submitBtn}
+                onPress={() => handleFinish(false)}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                <LinearGradient colors={gradients.love} style={StyleSheet.absoluteFill} />
+                {loading
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.submitText}>Let's go! 🚀</Text>
+                }
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.secondaryBtn} onPress={() => handleFinish(true)}>
+                <Text style={styles.secondaryBtnText}>Skip for now</Text>
+              </TouchableOpacity>
+            </>
+          ) : (
+            <>
+              <View style={styles.infoCard}>
+                <Text style={{ fontSize: 40, marginBottom: 12 }}>💑</Text>
+                <Text style={styles.infoTitle}>You're all set!</Text>
+                <Text style={styles.infoBody}>
+                  Your partner will set the anniversary date. You can both update it later from Settings.
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                style={styles.submitBtn}
+                onPress={() => handleFinish(true)}
+                disabled={loading}
+                activeOpacity={0.85}
+              >
+                <LinearGradient colors={gradients.love} style={StyleSheet.absoluteFill} />
+                {loading
+                  ? <ActivityIndicator color="#fff" />
+                  : <Text style={styles.submitText}>Continue 💕</Text>
+                }
+              </TouchableOpacity>
+            </>
           )}
-
-          <TouchableOpacity
-            style={styles.submitBtn}
-            onPress={() => handleFinish(false)}
-            disabled={loading}
-            activeOpacity={0.85}
-          >
-            <LinearGradient colors={gradients.love} style={StyleSheet.absoluteFill} />
-            {loading
-              ? <ActivityIndicator color="#fff" />
-              : <Text style={styles.submitText}>Let's go! 🚀</Text>
-            }
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.secondaryBtn} onPress={() => handleFinish(true)}>
-            <Text style={styles.secondaryBtnText}>Skip for now</Text>
-          </TouchableOpacity>
         </Animated.View>
       </LinearGradient>
     );
@@ -389,4 +419,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20, paddingVertical: 8, marginTop: 10,
   },
   confirmBtnText: { color: '#fff', fontWeight: '700' },
+
+  // Info card (joiner view on anniversary screen)
+  infoCard: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderRadius: 20,
+    padding: 28,
+    alignItems: 'center',
+    marginBottom: 28,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.12)',
+    width: '100%',
+  },
+  infoTitle: { color: '#fff', fontSize: 20, fontWeight: '700', marginBottom: 10 },
+  infoBody:  { color: 'rgba(255,255,255,0.6)', fontSize: 14, textAlign: 'center', lineHeight: 22 },
 });

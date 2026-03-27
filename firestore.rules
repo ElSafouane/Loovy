@@ -54,7 +54,14 @@ service cloud.firestore {
         request.resource.data.user1 == request.auth.uid ||
         request.resource.data.user2 == request.auth.uid
       );
-      allow read, update, delete: if isCoupleMembers(coupleId);
+      allow read, delete: if isCoupleMembers(coupleId);
+      allow update: if isCoupleMembers(coupleId) && (
+        // Any couple member can update any field EXCEPT anniversaryDate
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['anniversaryDate']) ||
+        // Only the initiator may set/change the anniversaryDate directly
+        // (partner changes go through the pendingAnniversaryChange approval flow)
+        request.auth.uid == resource.data.initiatorUid
+      );
 
       // ── Memories subcollection ──────────────────────────────
       match /memories/{memId} {

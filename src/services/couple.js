@@ -68,6 +68,7 @@ export const joinCouple = async (myUid, rawCode) => {
   await setDoc(doc(db, 'couples', coupleId), {
     user1:           ids[0],
     user2:           ids[1],
+    initiatorUid:    partnerId,
     createdAt:       serverTimestamp(),
     anniversaryDate: null,
   });
@@ -101,6 +102,28 @@ export const completeInviteHandshake = async (uid, code, coupleId) => {
   } catch (e) {
     console.warn('[couple] invite code cleanup failed (non-critical):', e.message);
   }
+};
+
+// ─── Break up: delete couple doc + subcollections, clear own user doc ─
+// We can only write our OWN user doc (Firestore rules).
+// After the couple doc is deleted, the partner's CoupleContext listener
+// fires (exists() === false) and the app routes them to setup.
+export const breakupCouple = async (uid, coupleId) => {
+  // 1. Delete all subcollection documents we have access to
+  const subcollections = ['memories', 'events']; // capsules have allow delete: if false
+  for (const sub of subcollections) {
+    const snap = await getDocs(collection(db, 'couples', coupleId, sub));
+    await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+  }
+
+  // 2. Delete the couple doc itself
+  await deleteDoc(doc(db, 'couples', coupleId));
+
+  // 3. Clear own user doc
+  await updateDoc(doc(db, 'users', uid), {
+    coupleId:   null,
+    inviteCode: null,
+  });
 };
 
 // ─── Set (or update) the anniversary date for a couple ───────

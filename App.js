@@ -6,20 +6,24 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { auth }                from './src/config/firebase';
 import { getUserDoc }          from './src/services/auth';
+import { useNotifications }    from './src/hooks/useNotifications';
 import { CoupleProvider }      from './src/context/CoupleContext';
 import TabNavigator            from './src/navigation/TabNavigator';
 import AuthScreen              from './src/screens/AuthScreen';
 import CoupleSetupScreen       from './src/screens/CoupleSetupScreen';
+import OnboardingScreen        from './src/screens/OnboardingScreen';
 import { colors }              from './src/theme/colors';
 
 // ── App states ──────────────────────────────────────────────
 // 'loading'         – resolving Firebase session from cache
 // 'unauthenticated' – no session → AuthScreen
+// 'onboarding'      – first login after sign-up → OnboardingScreen
 // 'no-couple'       – logged in, not yet paired → CoupleSetupScreen
 // 'ready'           – logged in + coupleId → main app
 // ────────────────────────────────────────────────────────────
 
 export default function App() {
+  useNotifications(); // registers device and stores push token
   const [appState,     setAppState]     = useState('loading');
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [coupleId,     setCoupleId]     = useState(null);
@@ -38,6 +42,8 @@ export default function App() {
         if (userDoc?.coupleId) {
           setCoupleId(userDoc.coupleId);
           setAppState('ready');
+        } else if (!userDoc?.onboardingComplete) {
+          setAppState('onboarding');
         } else {
           setAppState('no-couple');
         }
@@ -68,6 +74,8 @@ export default function App() {
             if (userDoc?.coupleId) {
               setCoupleId(userDoc.coupleId);
               setAppState('ready');
+            } else if (!userDoc?.onboardingComplete) {
+              setAppState('onboarding');
             } else {
               setAppState('no-couple');
             }
@@ -75,6 +83,13 @@ export default function App() {
             setAppState('no-couple');
           }
         }} />
+      )}
+
+      {appState === 'onboarding' && firebaseUser && (
+        <OnboardingScreen
+          user={firebaseUser}
+          onComplete={() => setAppState('no-couple')}
+        />
       )}
 
       {appState === 'no-couple' && firebaseUser && (
@@ -85,7 +100,13 @@ export default function App() {
       )}
 
       {appState === 'ready' && coupleId && (
-        <CoupleProvider coupleId={coupleId}>
+        <CoupleProvider
+          coupleId={coupleId}
+          onBreakup={() => {
+            setCoupleId(null);
+            setAppState('no-couple');
+          }}
+        >
           <NavigationContainer>
             <TabNavigator />
           </NavigationContainer>

@@ -1,247 +1,257 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, KeyboardAvoidingView, Platform, Image } from 'react-native';
+import React, { useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  StyleSheet,
+  Dimensions,
+  Platform,
+} from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { FadeInRight, FadeOutLeft } from 'react-native-reanimated';
-import DateTimePicker from '@react-native-community/datetimepicker';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as ImagePicker from 'expo-image-picker';
-import { Ionicons } from '@expo/vector-icons';
-import { colors, gradients } from '../theme/colors';
+import Animated, { FadeInDown } from 'react-native-reanimated';
+import { doc, updateDoc } from 'firebase/firestore';
+import { auth, db } from '../config/firebase';
+import { colors } from '../theme/colors';
 
-const MOODS = [
-  { id: 'happy', label: 'Happy', emoji: '😊' },
-  { id: 'love', label: 'Love', emoji: '😍' },
-  { id: 'sleepy', label: 'Sleepy', emoji: '😴' },
-  { id: 'sad', label: 'Sad', emoji: '😢' },
-  { id: 'missing', label: 'Missing', emoji: '😭' },
-  { id: 'angry', label: 'Angry', emoji: '😠' },
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+const SLIDES = [
+  {
+    emoji: '💑',
+    title: 'Your love, always connected',
+    body: 'Loovy keeps you and your partner in sync no matter the distance. Share moods, locations, and moments — in real time.',
+    gradient: ['#0f0c29', '#302b63', '#24243e'],
+    accent: '#e94057',
+  },
+  {
+    emoji: '🌍',
+    title: "See each other's world",
+    body: "Know where your partner is, what time it is for them, and feel a little closer — even when oceans apart.",
+    gradient: ['#1a1a2e', '#16213e', '#0f3460'],
+    accent: '#f5a623',
+  },
+  {
+    emoji: '📸',
+    title: 'Cherish every memory',
+    body: 'Build a shared timeline of your relationship — photos, emojis, stories. Your love story, in one place.',
+    gradient: ['#12001f', '#2d1b5e', '#1a0533'],
+    accent: '#a855f7',
+  },
+  {
+    emoji: '💌',
+    title: 'Send love across time',
+    body: 'Lock a heartfelt message in a Time Capsule and set it to open on a special date. A surprise waiting to be unwrapped.',
+    gradient: ['#0f0c29', '#302b63', '#24243e'],
+    accent: '#e94057',
+  },
 ];
 
-export default function OnboardingScreen({ onComplete }) {
-  const [step, setStep] = useState(0);
-  
-  const [myName, setMyName] = useState('');
-  const [partnerName, setPartnerName] = useState('');
-  const [myAvatar, setMyAvatar] = useState(null);
-  const [anniversary, setAnniversary] = useState(new Date());
-  const [myMood, setMyMood] = useState(MOODS[0]);
-  
-  const [showDatePicker, setShowDatePicker] = useState(false);
+export default function OnboardingScreen({ user, onComplete }) {
+  const scrollRef = useRef(null);
+  const [activeIndex, setActiveIndex] = useState(0);
 
-  const handleNext = async () => {
-    if (step === 0 && !myName.trim()) return alert("Please enter your name 😄");
-    if (step === 1 && !partnerName.trim()) return alert("Please enter their name 😊");
-    
-    if (step < 4) {
-      setStep(step + 1);
-    } else {
-      try {
-        const payload = [
-          ['@myName', myName],
-          ['@partnerName', partnerName],
-          ['@anniversaryDate', anniversary.toISOString()],
-          ['@myStatus', `${myMood.label} ${myMood.emoji}`],
-          ['@hasOnboarded', 'true']
-        ];
-        if (myAvatar) payload.push(['@myAvatar', myAvatar]);
+  const uid = user?.uid || auth.currentUser?.uid;
 
-        await AsyncStorage.multiSet(payload);
-        onComplete();
-      } catch (e) {
-        console.error("Failed to save onboarding data:", e);
-        onComplete();
-      }
+  const handleFinish = async () => {
+    try {
+      await updateDoc(doc(db, 'users', uid), { onboardingComplete: true });
+    } catch (e) {
+      console.warn('OnboardingScreen: could not mark onboarding complete:', e);
     }
+    onComplete();
   };
 
-  const pickImage = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-
-    if (!result.canceled) {
-      setMyAvatar(result.assets[0].uri);
+  const handleNext = () => {
+    const next = activeIndex + 1;
+    if (next >= SLIDES.length) {
+      handleFinish();
+      return;
     }
+    scrollRef.current?.scrollTo({ x: next * SCREEN_WIDTH, animated: true });
+    setActiveIndex(next);
   };
 
-  const onDateChange = (event, selectedDate) => {
-    if (Platform.OS === 'android') setShowDatePicker(false);
-    if (selectedDate) setAnniversary(selectedDate);
+  const handleScroll = (e) => {
+    const index = Math.round(e.nativeEvent.contentOffset.x / SCREEN_WIDTH);
+    setActiveIndex(index);
   };
 
-  const renderStepContent = () => {
-    switch(step) {
-      case 0:
-        return (
-          <Animated.View key="step0" entering={FadeInRight} exiting={FadeOutLeft} style={styles.stepContainer}>
-            <Text style={styles.title}>Welcome!</Text>
-            <Text style={styles.subtitle}>Let's start by getting to know you. What is your name?</Text>
-            <View style={styles.inputContainer}>
-              <TextInput 
-                style={styles.input} 
-                placeholder="Your Name" 
-                placeholderTextColor="#888"
-                value={myName}
-                onChangeText={setMyName}
-                autoFocus
-                onSubmitEditing={handleNext}
-              />
-            </View>
-          </Animated.View>
-        );
-      case 1:
-        return (
-          <Animated.View key="step1" entering={FadeInRight} exiting={FadeOutLeft} style={styles.stepContainer}>
-            <Text style={styles.title}>Nice to meet you, {myName}!</Text>
-            <Text style={styles.subtitle}>What is your partner's name?</Text>
-            <View style={styles.inputContainer}>
-              <TextInput 
-                style={styles.input} 
-                placeholder="Partner's Name" 
-                placeholderTextColor="#888"
-                value={partnerName}
-                onChangeText={setPartnerName}
-                autoFocus
-                onSubmitEditing={handleNext}
-              />
-            </View>
-          </Animated.View>
-        );
-      case 2:
-        return (
-          <Animated.View key="step2" entering={FadeInRight} exiting={FadeOutLeft} style={styles.stepContainer}>
-            <Text style={styles.title}>Your Profile</Text>
-            <Text style={styles.subtitle}>Let's put a face to the name! Choose a beautiful profile picture.</Text>
-            
-            <View style={{ alignItems: 'center', marginVertical: 20 }}>
-              <TouchableOpacity onPress={pickImage} style={styles.avatarPicker}>
-                {myAvatar ? (
-                  <Image source={{ uri: myAvatar }} style={styles.previewAvatar} />
-                ) : (
-                  <>
-                    <Ionicons name="camera" size={40} color={colors.primary} />
-                    <Text style={styles.avatarPickerText}>Tap to add photo</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity style={styles.skipBtn} onPress={handleNext}>
-              <Text style={styles.skipBtnText}>{myAvatar ? "Looks great! Continue" : "Skip for now"}</Text>
-            </TouchableOpacity>
-
-          </Animated.View>
-        );
-      case 3:
-        return (
-          <Animated.View key="step3" entering={FadeInRight} exiting={FadeOutLeft} style={styles.stepContainer}>
-            <Text style={styles.title}>Your Journey</Text>
-            <Text style={styles.subtitle}>When did you and {partnerName} start this beautiful journey together?</Text>
-            
-            {!showDatePicker && (
-              <TouchableOpacity style={styles.inputContainer} onPress={() => setShowDatePicker(true)}>
-                <Text style={[styles.input, { paddingTop: Platform.OS === 'ios' ? 14 : 0 }]}>
-                  {anniversary.toDateString()}
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            {showDatePicker && (
-              <View style={styles.datePickerContainer}>
-                <DateTimePicker
-                  value={anniversary}
-                  mode="date"
-                  display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                  onChange={onDateChange}
-                  maximumDate={new Date()}
-                  textColor="white"
-                />
-                {Platform.OS === 'ios' && (
-                  <TouchableOpacity onPress={() => setShowDatePicker(false)} style={styles.doneBtn}>
-                    <Text style={styles.doneBtnText}>Confirm Date</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            )}
-          </Animated.View>
-        );
-      case 4:
-        return (
-          <Animated.View key="step4" entering={FadeInRight} exiting={FadeOutLeft} style={styles.stepContainer}>
-            <Text style={styles.title}>Almost there!</Text>
-            <Text style={styles.subtitle}>How are you feeling right now? Your partner will see this.</Text>
-            
-            <View style={styles.moodsGrid}>
-              {MOODS.map(m => (
-                <TouchableOpacity 
-                  key={m.id} 
-                  style={[styles.moodOption, myMood.id === m.id && styles.moodOptionSelected]} 
-                  onPress={() => setMyMood(m)}
-                >
-                  <Text style={styles.moodEmoji}>{m.emoji}</Text>
-                  <Text style={[styles.moodLabel, myMood.id === m.id && {color: '#fff'}]}>{m.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </Animated.View>
-        );
-    }
-  };
+  const isLast = activeIndex === SLIDES.length - 1;
+  const slide = SLIDES[activeIndex];
 
   return (
-    <LinearGradient colors={colors.background === '#1A1A2E' ? ['#0f0c29', '#302b63', '#24243e'] : ['#1A1A2E', '#1A1A2E']} style={styles.container}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{flex: 1}}>
-        <View style={styles.innerContainer}>
-          
-          <View style={styles.content}>
-            {renderStepContent()}
-          </View>
+    <View style={styles.root}>
+      <ScrollView
+        ref={scrollRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onMomentumScrollEnd={handleScroll}
+        scrollEventThrottle={16}
+        style={styles.scroller}
+      >
+        {SLIDES.map((s, i) => (
+          <LinearGradient key={i} colors={s.gradient} style={styles.slide}>
+            {/* Decorative blobs */}
+            <View style={[styles.blob, styles.blobTopLeft,  { backgroundColor: s.accent }]} />
+            <View style={[styles.blob, styles.blobBottomRight, { backgroundColor: s.accent }]} />
 
-          {step !== 2 && ( // For step 2 we have a custom skip/continue button directly inside the step view
-            <TouchableOpacity style={styles.nextBtn} onPress={handleNext}>
-              <LinearGradient colors={gradients.active} style={StyleSheet.absoluteFill} />
-              <Text style={styles.nextBtnText}>{step === 4 ? "Start Journey" : "Continue"}</Text>
-            </TouchableOpacity>
-          )}
+            <Animated.View entering={FadeInDown.delay(100)} style={styles.slideContent}>
+              <Text style={styles.emoji}>{s.emoji}</Text>
+              <Text style={styles.title}>{s.title}</Text>
+              <Text style={styles.body}>{s.body}</Text>
+            </Animated.View>
+          </LinearGradient>
+        ))}
+      </ScrollView>
 
+      {/* Bottom controls */}
+      <LinearGradient
+        colors={['transparent', slide.gradient[slide.gradient.length - 1]]}
+        style={styles.controls}
+        pointerEvents="box-none"
+      >
+        {/* Dot indicators */}
+        <View style={styles.dots}>
+          {SLIDES.map((s, i) => (
+            <View
+              key={i}
+              style={[
+                styles.dot,
+                {
+                  backgroundColor: i === activeIndex ? s.accent : 'rgba(255,255,255,0.3)',
+                  width: i === activeIndex ? 24 : 8,
+                },
+              ]}
+            />
+          ))}
         </View>
-      </KeyboardAvoidingView>
-    </LinearGradient>
+
+        {/* Skip link (hidden on last slide) */}
+        {!isLast && (
+          <TouchableOpacity onPress={handleFinish} style={styles.skipWrapper}>
+            <Text style={styles.skipText}>Skip</Text>
+          </TouchableOpacity>
+        )}
+
+        {/* Next / Let's go button */}
+        <TouchableOpacity
+          onPress={handleNext}
+          style={[styles.nextBtn, { backgroundColor: slide.accent }]}
+          activeOpacity={0.85}
+        >
+          <Text style={styles.nextBtnText}>
+            {isLast ? "🚀 Let's go!" : 'Next'}
+          </Text>
+        </TouchableOpacity>
+      </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  innerContainer: { flex: 1, padding: 30, justifyContent: 'center' },
-  content: { flex: 1, justifyContent: 'center' },
-  stepContainer: { width: '100%' },
-  
-  title: { fontSize: 32, fontWeight: 'bold', color: '#fff', marginBottom: 15 },
-  subtitle: { fontSize: 18, color: colors.textSecondary, marginBottom: 35, lineHeight: 26 },
-  
-  inputContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: 15, paddingHorizontal: 20, height: 60, borderWidth: 1, borderColor: colors.cardBorder },
-  input: { flex: 1, color: '#fff', fontSize: 20 },
+  root: {
+    flex: 1,
+    backgroundColor: '#0f0c29',
+  },
+  scroller: {
+    flex: 1,
+  },
+  slide: {
+    width: SCREEN_WIDTH,
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+  },
+  slideContent: {
+    paddingHorizontal: 36,
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  emoji: {
+    fontSize: 80,
+    marginBottom: 28,
+    textAlign: 'center',
+  },
+  title: {
+    fontSize: 30,
+    fontWeight: '800',
+    color: colors.text,
+    textAlign: 'center',
+    marginBottom: 18,
+    lineHeight: 38,
+  },
+  body: {
+    fontSize: 17,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 26,
+  },
 
-  avatarPicker: { width: 150, height: 150, borderRadius: 75, backgroundColor: 'rgba(255,255,255,0.05)', borderWidth: 2, borderColor: colors.primary, borderStyle: 'dashed', justifyContent: 'center', alignItems: 'center' },
-  avatarPickerText: { color: colors.primary, marginTop: 10, fontSize: 12, fontWeight: 'bold' },
-  previewAvatar: { width: 146, height: 146, borderRadius: 73 },
+  // Decorative blobs
+  blob: {
+    position: 'absolute',
+    width: 220,
+    height: 220,
+    borderRadius: 110,
+    opacity: 0.12,
+    zIndex: 1,
+  },
+  blobTopLeft: {
+    top: -60,
+    left: -60,
+  },
+  blobBottomRight: {
+    bottom: -60,
+    right: -60,
+  },
 
-  skipBtn: { paddingVertical: 18, alignItems: 'center', marginTop: 30, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.08)' },
-  skipBtnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-
-  datePickerContainer: { backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 15, padding: 15, alignItems: 'center', borderWidth: 1, borderColor: colors.cardBorder },
-  doneBtn: { backgroundColor: colors.primary, paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20, marginTop: 15 },
-  doneBtnText: { color: '#fff', fontWeight: 'bold' },
-
-  moodsGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
-  moodOption: { width: '31%', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: 15, paddingVertical: 20, alignItems: 'center', marginBottom: 15, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
-  moodOptionSelected: { backgroundColor: 'rgba(233, 64, 87, 0.2)', borderColor: colors.primary },
-  moodEmoji: { fontSize: 34, marginBottom: 10 },
-  moodLabel: { color: '#aaa', fontSize: 14, fontWeight: '600' },
-
-  nextBtn: { overflow: 'hidden', borderRadius: 20, paddingVertical: 18, alignItems: 'center', marginBottom: 40 },
-  nextBtnText: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
+  // Controls overlay
+  controls: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingTop: 60,
+    paddingBottom: Platform.OS === 'ios' ? 50 : 36,
+    paddingHorizontal: 30,
+    alignItems: 'center',
+  },
+  dots: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 28,
+    gap: 6,
+  },
+  dot: {
+    height: 8,
+    borderRadius: 4,
+  },
+  skipWrapper: {
+    marginBottom: 16,
+  },
+  skipText: {
+    color: 'rgba(255,255,255,0.5)',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  nextBtn: {
+    width: '100%',
+    paddingVertical: 18,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  nextBtnText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
 });

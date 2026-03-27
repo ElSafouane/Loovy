@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Alert,
@@ -7,8 +7,12 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
-import { signIn, signUp, resetPassword } from '../services/auth';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import { signIn, signUp, resetPassword, signInWithGoogle } from '../services/auth';
 import { colors, gradients } from '../theme/colors';
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function AuthScreen({ onAuthenticated }) {
   const [mode, setMode]           = useState('login'); // 'login' | 'register'
@@ -17,6 +21,28 @@ export default function AuthScreen({ onAuthenticated }) {
   const [password, setPassword]   = useState('');
   const [showPass, setShowPass]   = useState(false);
   const [loading, setLoading]     = useState(false);
+
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    // Users must fill in their client IDs from Google Cloud Console
+    // (See .env.example for required variables)
+    clientId:         process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_EXPO,
+    iosClientId:      process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS,
+    androidClientId:  process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID,
+    webClientId:      process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB,
+  });
+
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { id_token } = response.params;
+      setLoading(true);
+      signInWithGoogle(id_token)
+        .then((user) => onAuthenticated(user))
+        .catch((e) => {
+          Alert.alert('Google Sign-In failed', e.message);
+          setLoading(false);
+        });
+    }
+  }, [response]);
 
   const isRegister = mode === 'register';
 
@@ -183,6 +209,24 @@ export default function AuthScreen({ onAuthenticated }) {
                 }
               </TouchableOpacity>
 
+              {/* ─── Divider ─── */}
+              <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>or</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              {/* ─── Google ─── */}
+              <TouchableOpacity
+                style={styles.googleBtn}
+                onPress={() => promptAsync()}
+                disabled={!request || loading}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.googleIcon}>G</Text>
+                <Text style={styles.googleBtnText}>Continue with Google</Text>
+              </TouchableOpacity>
+
             </BlurView>
           </Animated.View>
 
@@ -253,6 +297,22 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center',
   },
   submitText: { color: '#fff', fontSize: 16, fontWeight: '700' },
+
+  // Divider
+  divider:     { flexDirection: 'row', alignItems: 'center', marginVertical: 20 },
+  dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.12)' },
+  dividerText: { color: 'rgba(255,255,255,0.4)', marginHorizontal: 12, fontSize: 13 },
+
+  // Google
+  googleBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    height: 52, borderRadius: 16, borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    marginBottom: 8,
+  },
+  googleIcon:    { color: '#fff', fontSize: 18, fontWeight: '900', marginRight: 10 },
+  googleBtnText: { color: '#fff', fontSize: 15, fontWeight: '600' },
 
   // Privacy
   privacyNote: {

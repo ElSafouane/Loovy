@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  Image, Modal, TextInput, Platform, KeyboardAvoidingView, Switch
+  Image, Modal, TextInput, Platform, KeyboardAvoidingView, Switch, Alert
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -10,6 +10,8 @@ import Animated, { FadeInUp, FadeInRight } from 'react-native-reanimated';
 import * as ImagePicker from 'expo-image-picker';
 import { useCouple } from '../context/CoupleContext';
 import { logOut } from '../services/auth';
+import { breakupCouple } from '../services/couple';
+import { uploadAvatar } from '../services/storage';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors, gradients } from '../theme/colors';
 
@@ -59,6 +61,7 @@ export default function SettingsScreen() {
   const [isLoveLanguageModalOpen, setLoveLanguageModalOpen] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showAnnivPicker, setShowAnnivPicker] = useState(false);
+  const [isBreakupModalOpen, setBreakupModalOpen] = useState(false);
 
   // Temp input values for modals
   const [tempNickname, setTempNickname] = useState('');
@@ -72,9 +75,16 @@ export default function SettingsScreen() {
       allowsEditing: true, aspect: [1, 1], quality: 0.8,
     });
     if (!result.canceled) {
-      const uri = result.assets[0].uri;
-      await updateMyProfile({ avatarUrl: uri, avatarEmoji: null });
+      const localUri = result.assets[0].uri;
       setAvatarModalOpen(false);
+      // Upload to Firebase Storage first so partner gets a real HTTPS URL
+      try {
+        const uid = myProfile?.uid || require('../config/firebase').auth.currentUser?.uid;
+        const downloadUrl = await uploadAvatar(uid, localUri);
+        await updateMyProfile({ avatarUrl: downloadUrl, avatarEmoji: null });
+      } catch (e) {
+        Alert.alert('Upload failed', 'Could not upload photo. Please try again.');
+      }
     }
   };
 
@@ -300,6 +310,22 @@ export default function SettingsScreen() {
             <TouchableOpacity style={styles.settingRow} onPress={() => logOut()}>
               <View style={[styles.settingIconBox, { backgroundColor: 'rgba(233,64,87,0.15)' }]}><Ionicons name="log-out-outline" size={20} color={colors.primary} /></View>
               <Text style={[styles.settingLabel, { color: colors.primary }]}>Sign Out</Text>
+            </TouchableOpacity>
+            <View style={styles.divider} />
+            <TouchableOpacity
+              style={styles.settingRow}
+              onPress={() => setBreakupModalOpen(true)}
+            >
+              <View style={[styles.settingIconBox, { backgroundColor: 'rgba(233,64,87,0.1)' }]}>
+                <Ionicons name="heart-dislike-outline" size={20} color="#e94057" />
+              </View>
+              <View style={{ flex: 1, marginLeft: 15 }}>
+                <Text style={[styles.settingLabel, { color: '#e94057' }]}>
+                  Break up with {partnerName}
+                </Text>
+                <Text style={styles.settingValue}>This cannot be undone</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#e94057" />
             </TouchableOpacity>
           </BlurView>
         </Animated.View>
@@ -550,6 +576,44 @@ export default function SettingsScreen() {
         </KeyboardAvoidingView>
       </Modal>
 
+      {/* ====== BREAKUP MODAL ====== */}
+      <Modal visible={isBreakupModalOpen} transparent animationType="fade">
+        <View style={styles.modalBg}>
+          <View style={[styles.modalContent, { alignItems: 'center' }]}>
+            <LinearGradient colors={['#1a0a0a', '#2d0f0f']} style={StyleSheet.absoluteFill} />
+            <Text style={{ fontSize: 48, marginBottom: 16 }}>💔</Text>
+            <Text style={[styles.modalTitle, { textAlign: 'center', color: '#fff' }]}>
+              Break up with {partnerName}?
+            </Text>
+            <Text style={[styles.validationNote, { textAlign: 'center', marginBottom: 24 }]}>
+              This action is irreversible. Your shared memories, capsules, and events will be permanently deleted. There is no going back.
+            </Text>
+
+            <TouchableOpacity
+              style={[styles.saveBtn, { backgroundColor: '#e94057', overflow: 'hidden', width: '100%' }]}
+              onPress={async () => {
+                setBreakupModalOpen(false);
+                try {
+                  const { coupleId: cId } = couple || {};
+                  const uid = myProfile?.uid || require('../config/firebase').auth.currentUser?.uid;
+                  if (cId && uid) await breakupCouple(uid, cId);
+                } catch (e) {
+                  Alert.alert('Error', e.message);
+                }
+              }}
+            >
+              <Text style={styles.saveBtnText}>Yes, break up 💔</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.secondaryBtn} onPress={() => setBreakupModalOpen(false)}>
+              <Text style={[styles.secondaryBtnText, { color: 'rgba(255,255,255,0.5)' }]}>
+                Cancel — I love {partnerName} ❤️
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
     </LinearGradient>
   );
 }
@@ -603,4 +667,6 @@ const styles = StyleSheet.create({
   emojiGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between' },
   emojiTile: { width: '19%', aspectRatio: 1, justifyContent: 'center', alignItems: 'center', borderRadius: 14, marginBottom: 10, backgroundColor: 'rgba(255,255,255,0.05)' },
   emojiTileSelected: { backgroundColor: 'rgba(233,64,87,0.25)', borderWidth: 2, borderColor: colors.primary },
+  secondaryBtn: { marginTop: 14, paddingVertical: 12, alignItems: 'center', width: '100%' },
+  secondaryBtnText: { fontSize: 15, fontWeight: '500' },
 });

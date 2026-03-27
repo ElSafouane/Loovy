@@ -23,7 +23,7 @@ import { auth, db } from '../config/firebase';
 
 const CoupleContext = createContext(null);
 
-export function CoupleProvider({ coupleId, children }) {
+export function CoupleProvider({ coupleId, children, onBreakup }) {
   const userId = auth.currentUser?.uid;
 
   const [myProfile,  setMyProfile]  = useState(null);
@@ -40,8 +40,17 @@ export function CoupleProvider({ coupleId, children }) {
     const unsubs = [];
 
     // Couple doc → also reveals partner UID
-    unsubs.push(onSnapshot(doc(db, 'couples', coupleId), (snap) => {
-      if (!snap.exists()) return;
+    unsubs.push(onSnapshot(doc(db, 'couples', coupleId), async (snap) => {
+      if (!snap.exists()) {
+        // Our couple doc was deleted (breakup). Clean up own user doc and signal App.js.
+        try {
+          await updateDoc(doc(db, 'users', userId), { coupleId: null, inviteCode: null });
+        } catch (e) {
+          console.warn('[CoupleContext] breakup user cleanup:', e.message);
+        }
+        onBreakup?.();
+        return;
+      }
       const data = snap.data();
       setCouple(data);
       const pUid = data.user1 === userId ? data.user2 : data.user1;
