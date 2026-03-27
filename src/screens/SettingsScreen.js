@@ -7,8 +7,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInUp, FadeInRight } from 'react-native-reanimated';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
+import { useCouple } from '../context/CoupleContext';
+import { logOut } from '../services/auth';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { colors, gradients } from '../theme/colors';
 
@@ -23,27 +24,28 @@ const LOVE_LANGUAGES = [
 ];
 
 export default function SettingsScreen() {
+  // ── Live Firestore data ──────────────────────────────────
+  const { myProfile, partner, couple, updateMyProfile, updateCouple } = useCouple();
+
+  // Derived values from Firestore (fallback to empty while loading)
+  const myName        = myProfile?.name         || '';
+  const partnerName   = myProfile?.partnerNickname || partner?.name || 'Partner';
+  const myAvatar      = myProfile?.avatarUrl     || null;
+  const selectedEmoji = myProfile?.avatarEmoji   || null;
+  const anniversary   = couple?.anniversaryDate  ? new Date(couple.anniversaryDate) : new Date('2023-08-14');
+  const coupleNickname   = couple?.nickname      || '';
+  const relationshipSong = couple?.song          || '';
+  const specialPlace     = couple?.specialPlace  || '';
+  const couplePromise    = couple?.promise       || '';
+  const myLoveLanguage   = myProfile?.loveLanguage || null;
+
+  // UI-only state (preferences, modals, pending inputs)
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [locationEnabled, setLocationEnabled] = useState(true);
-
-  // Profile data
-  const [myName, setMyName] = useState('');
-  const [partnerName, setPartnerName] = useState('');
-  const [myAvatar, setMyAvatar] = useState(null);
-  const [selectedEmoji, setSelectedEmoji] = useState(null);
-  const [anniversary, setAnniversary] = useState(new Date('2023-08-14'));
-
-  // Couple profile extras
-  const [coupleNickname, setCoupleNickname] = useState('');
-  const [relationshipSong, setRelationshipSong] = useState('');
-  const [specialPlace, setSpecialPlace] = useState('');
-  const [couplePromise, setCouplePromise] = useState('');
-  const [myLoveLanguage, setMyLoveLanguage] = useState(null);
-
-  // Pending states
-  const [pendingAnniversary, setPendingAnniversary] = useState(null); // date awaiting partner confirmation
   const [pendingMeeting, setPendingMeeting] = useState(false);
   const [proposedMeetingDate, setProposedMeetingDate] = useState(new Date());
+  const [pendingAnniversary, setPendingAnniversary] = useState(null);
+  const [proposedAnniversary, setProposedAnniversary] = useState(new Date());
 
   // Modals
   const [isAvatarModalOpen, setAvatarModalOpen] = useState(false);
@@ -57,7 +59,6 @@ export default function SettingsScreen() {
   const [isLoveLanguageModalOpen, setLoveLanguageModalOpen] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showAnnivPicker, setShowAnnivPicker] = useState(false);
-  const [proposedAnniversary, setProposedAnniversary] = useState(new Date());
 
   // Temp input values for modals
   const [tempNickname, setTempNickname] = useState('');
@@ -65,47 +66,20 @@ export default function SettingsScreen() {
   const [tempPlace, setTempPlace] = useState('');
   const [tempPromise, setTempPromise] = useState('');
 
-  useEffect(() => {
-    AsyncStorage.multiGet([
-      '@myName', '@partnerName', '@myAvatar', '@anniversaryDate',
-      '@coupleNickname', '@relationshipSong', '@specialPlace', '@couplePromise', '@myLoveLanguage'
-    ]).then(entries => {
-      const db = Object.fromEntries(entries);
-      if (db['@myName']) setMyName(db['@myName']);
-      if (db['@partnerName']) setPartnerName(db['@partnerName']);
-      if (db['@myAvatar']) {
-        if (db['@myAvatar'].length <= 4) setSelectedEmoji(db['@myAvatar']);
-        else setMyAvatar(db['@myAvatar']);
-      }
-      if (db['@anniversaryDate']) setAnniversary(new Date(db['@anniversaryDate']));
-      if (db['@coupleNickname']) setCoupleNickname(db['@coupleNickname']);
-      if (db['@relationshipSong']) setRelationshipSong(db['@relationshipSong']);
-      if (db['@specialPlace']) setSpecialPlace(db['@specialPlace']);
-      if (db['@couplePromise']) setCouplePromise(db['@couplePromise']);
-      if (db['@myLoveLanguage']) setMyLoveLanguage(db['@myLoveLanguage']);
-    });
-  }, []);
-
   const pickImage = async () => {
-    let result = await ImagePicker.launchImageLibraryAsync({
+    const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
+      allowsEditing: true, aspect: [1, 1], quality: 0.8,
     });
     if (!result.canceled) {
       const uri = result.assets[0].uri;
-      setMyAvatar(uri);
-      setSelectedEmoji(null);
-      await AsyncStorage.setItem('@myAvatar', uri);
+      await updateMyProfile({ avatarUrl: uri, avatarEmoji: null });
       setAvatarModalOpen(false);
     }
   };
 
   const selectEmoji = async (emoji) => {
-    setSelectedEmoji(emoji);
-    setMyAvatar(null);
-    await AsyncStorage.setItem('@myAvatar', emoji);
+    await updateMyProfile({ avatarEmoji: emoji, avatarUrl: null });
     setEmojiModalOpen(false);
     setAvatarModalOpen(false);
   };
@@ -122,25 +96,27 @@ export default function SettingsScreen() {
 
   const proposeMeetingDate = async () => {
     setPendingMeeting(true);
-    await AsyncStorage.setItem('@proposedMeetingDate', proposedMeetingDate.toISOString());
+    // Store proposed meeting on couple doc so partner sees it too
+    await updateCouple({ proposedMeetingDate: proposedMeetingDate.toISOString() });
     setMeetingDateModalOpen(false);
   };
 
-  const proposeAnniversaryChange = () => {
+  const proposeAnniversaryChange = async () => {
     setPendingAnniversary(proposedAnniversary);
+    // Update anniversary on couple doc immediately (both partners see it)
+    await updateCouple({ anniversaryDate: proposedAnniversary.toISOString() });
     setAnniversaryModalOpen(false);
     setShowAnnivPicker(false);
   };
 
-  const saveTextField = async (key, value, setter, closeModal) => {
-    setter(value);
-    await AsyncStorage.setItem(key, value);
+  /** Generic save for couple text fields (nickname, song, place, promise) */
+  const saveCoupleField = async (firestoreKey, value, closeModal) => {
+    await updateCouple({ [firestoreKey]: value });
     closeModal();
   };
 
   const saveLoveLanguage = async (lang) => {
-    setMyLoveLanguage(lang.id);
-    await AsyncStorage.setItem('@myLoveLanguage', lang.id);
+    await updateMyProfile({ loveLanguage: lang.id });
     setLoveLanguageModalOpen(false);
   };
 
@@ -321,7 +297,7 @@ export default function SettingsScreen() {
               <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
             </TouchableOpacity>
             <View style={styles.divider} />
-            <TouchableOpacity style={styles.settingRow}>
+            <TouchableOpacity style={styles.settingRow} onPress={() => logOut()}>
               <View style={[styles.settingIconBox, { backgroundColor: 'rgba(233,64,87,0.15)' }]}><Ionicons name="log-out-outline" size={20} color={colors.primary} /></View>
               <Text style={[styles.settingLabel, { color: colors.primary }]}>Sign Out</Text>
             </TouchableOpacity>
@@ -440,7 +416,7 @@ export default function SettingsScreen() {
               <View style={styles.inputContainer}>
                 <TextInput style={styles.input} placeholder="e.g. AynSaf" placeholderTextColor="#888" value={tempNickname} onChangeText={setTempNickname} autoFocus />
               </View>
-              <TouchableOpacity style={styles.saveBtn} onPress={() => saveTextField('@coupleNickname', tempNickname, setCoupleNickname, () => setCoupleNicknameModalOpen(false))}>
+              <TouchableOpacity style={styles.saveBtn} onPress={() => saveCoupleField('nickname', tempNickname, () => setCoupleNicknameModalOpen(false))}>
                 <LinearGradient colors={gradients.active} style={StyleSheet.absoluteFill} />
                 <Text style={styles.saveBtnText}>Save</Text>
               </TouchableOpacity>
@@ -463,7 +439,7 @@ export default function SettingsScreen() {
               <View style={styles.inputContainer}>
                 <TextInput style={styles.input} placeholder="Song title — Artist" placeholderTextColor="#888" value={tempSong} onChangeText={setTempSong} autoFocus />
               </View>
-              <TouchableOpacity style={styles.saveBtn} onPress={() => saveTextField('@relationshipSong', tempSong, setRelationshipSong, () => setSongModalOpen(false))}>
+              <TouchableOpacity style={styles.saveBtn} onPress={() => saveCoupleField('song', tempSong, () => setSongModalOpen(false))}>
                 <LinearGradient colors={gradients.active} style={StyleSheet.absoluteFill} />
                 <Text style={styles.saveBtnText}>Save</Text>
               </TouchableOpacity>
@@ -486,7 +462,7 @@ export default function SettingsScreen() {
               <View style={styles.inputContainer}>
                 <TextInput style={styles.input} placeholder="e.g. The café in Paris where we met" placeholderTextColor="#888" value={tempPlace} onChangeText={setTempPlace} autoFocus />
               </View>
-              <TouchableOpacity style={styles.saveBtn} onPress={() => saveTextField('@specialPlace', tempPlace, setSpecialPlace, () => setSpecialPlaceModalOpen(false))}>
+              <TouchableOpacity style={styles.saveBtn} onPress={() => saveCoupleField('specialPlace', tempPlace, () => setSpecialPlaceModalOpen(false))}>
                 <LinearGradient colors={gradients.active} style={StyleSheet.absoluteFill} />
                 <Text style={styles.saveBtnText}>Save</Text>
               </TouchableOpacity>
@@ -509,7 +485,7 @@ export default function SettingsScreen() {
               <View style={[styles.inputContainer, { height: 80, alignItems: 'flex-start', paddingTop: 15 }]}>
                 <TextInput style={[styles.input]} placeholder="Promise each other something…" placeholderTextColor="#888" value={tempPromise} onChangeText={setTempPromise} autoFocus multiline />
               </View>
-              <TouchableOpacity style={[styles.saveBtn, { marginTop: 10 }]} onPress={() => saveTextField('@couplePromise', tempPromise, setCouplePromise, () => setPromiseModalOpen(false))}>
+              <TouchableOpacity style={[styles.saveBtn, { marginTop: 10 }]} onPress={() => saveCoupleField('promise', tempPromise, () => setPromiseModalOpen(false))}>
                 <LinearGradient colors={gradients.active} style={StyleSheet.absoluteFill} />
                 <Text style={styles.saveBtnText}>Save</Text>
               </TouchableOpacity>

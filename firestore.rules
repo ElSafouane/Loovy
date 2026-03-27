@@ -1,0 +1,65 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helper functions ────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isCoupleMembers(coupleId) {
+      // Allow if the couple doc lists the current user as user1 or user2
+      return isSignedIn() && (
+        get(/databases/$(database)/documents/couples/$(coupleId)).data.user1 == request.auth.uid ||
+        get(/databases/$(database)/documents/couples/$(coupleId)).data.user2 == request.auth.uid
+      );
+    }
+
+    // ─── Users ───────────────────────────────────────────────────
+    // Each user can read/write their own doc.
+    // Partners can read (but NOT write) each other's doc via couple lookup.
+    match /users/{uid} {
+      allow read: if isSignedIn();       // any signed-in user can read profiles (needed for partner display)
+      allow write: if isOwner(uid);      // only the owner can mutate their own profile
+    }
+
+    // ─── Invite codes ────────────────────────────────────────────
+    // Any signed-in user can read (to validate a code) and write their own code.
+    match /inviteCodes/{code} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.createdBy == request.auth.uid;
+    }
+
+    // ─── Couples ─────────────────────────────────────────────────
+    // Only the two members of a couple can read/write their shared doc.
+    match /couples/{coupleId} {
+      allow read, write: if isCoupleMembers(coupleId);
+
+      // ── Memories subcollection ──────────────────────────────
+      match /memories/{memId} {
+        allow read, write: if isCoupleMembers(coupleId);
+      }
+
+      // ── Capsules subcollection ──────────────────────────────
+      match /capsules/{capId} {
+        allow read: if isCoupleMembers(coupleId);
+        // Anyone in the couple can create a capsule
+        allow create: if isCoupleMembers(coupleId);
+        // Only allow updates (e.g. marking isOpened), not deletion
+        allow update: if isCoupleMembers(coupleId);
+        allow delete: if false; // capsules are permanent once created
+      }
+
+      // ── Events subcollection ───────────────────────────────
+      match /events/{evtId} {
+        allow read, write: if isCoupleMembers(coupleId);
+      }
+    }
+  }
+}
