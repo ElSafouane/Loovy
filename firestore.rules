@@ -56,11 +56,20 @@ service cloud.firestore {
       );
       allow read, delete: if isCoupleMembers(coupleId);
       allow update: if isCoupleMembers(coupleId) && (
-        // Any couple member can update any field EXCEPT anniversaryDate
+        // ① Any couple member can update fields that don't touch anniversaryDate
         !request.resource.data.diff(resource.data).affectedKeys().hasAny(['anniversaryDate']) ||
-        // Only the initiator may set/change the anniversaryDate directly
-        // (partner changes go through the pendingAnniversaryChange approval flow)
-        request.auth.uid == resource.data.initiatorUid
+
+        // ② Initiator may set/change anniversaryDate directly at any time
+        request.auth.uid == resource.data.initiatorUid ||
+
+        // ③ Approval path: either partner can apply a pending proposal —
+        //    anniversaryDate is updated AND pendingAnniversaryChange is cleared
+        //    in the same write (atomic approval).
+        (
+          resource.data.keys().hasAll(['pendingAnniversaryChange']) &&
+          resource.data.pendingAnniversaryChange != null &&
+          request.resource.data.pendingAnniversaryChange == null
+        )
       );
 
       // ── Memories subcollection ──────────────────────────────
