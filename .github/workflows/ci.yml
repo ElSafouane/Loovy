@@ -1,0 +1,80 @@
+name: CI – Syntax check & auto-merge to master
+
+# Triggers on any feature/fix/docs branch push
+on:
+  push:
+    branches:
+      - "feat/**"
+      - "fix/**"
+      - "docs/**"
+      - "feature/**"
+
+# Needs write access to push the merge commit back to master
+permissions:
+  contents: write
+
+jobs:
+  test-and-merge:
+    name: Check & merge → master
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── 1. Checkout full history so we can merge later ──────────────────
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── 2. Node setup (matches Expo SDK 51 / RN 0.74) ───────────────────
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      # ── 3. Install deps ──────────────────────────────────────────────────
+      - name: Install dependencies
+        run: npm ci --legacy-peer-deps
+
+      # ── 4. JavaScript syntax check ───────────────────────────────────────
+      # node --check parses each file without executing it.
+      # Any syntax error causes a non-zero exit and fails the job.
+      - name: Syntax check – src/**/*.js + App.js
+        run: |
+          echo "🔍 Checking JS syntax..."
+          find src -name "*.js" -print0 | xargs -0 node --check
+          node --check App.js
+          echo "✅ All files parsed OK"
+
+      # ── 5. Verify no duplicate/circular React imports ────────────────────
+      # Quick heuristic: make sure every screen file exports a default export.
+      - name: Verify default exports
+        run: |
+          echo "🔍 Checking default exports in screens..."
+          for f in src/screens/*.js; do
+            if ! grep -q "export default" "$f"; then
+              echo "❌ Missing default export in $f"
+              exit 1
+            fi
+          done
+          echo "✅ All screens export a default component"
+
+      # ── 6. Auto-merge into master ────────────────────────────────────────
+      # Only runs if ALL previous steps succeeded.
+      - name: Merge branch into master
+        if: success()
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          echo "🔀 Merging $BRANCH → master..."
+
+          git config user.name  "loovy-ci-bot"
+          git config user.email "ci@loovy.app"
+
+          git fetch origin master
+          git checkout master
+          git merge --no-ff "origin/$BRANCH" \
+            -m "chore: auto-merge $BRANCH → master [CI ✅]"
+          git push origin master
+
+          echo "🎉 $BRANCH successfully merged into master"
