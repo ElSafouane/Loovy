@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   ActivityIndicator, Alert, Platform,
@@ -28,7 +28,6 @@ export default function CoupleSetupScreen({ user, onLinked }) {
 
   // Generate flow
   const [myCode,      setMyCode]      = useState('');
-  const listenerRef = useRef(null);
 
   // Enter flow
   const [inputCode,   setInputCode]   = useState('');
@@ -49,14 +48,21 @@ export default function CoupleSetupScreen({ user, onLinked }) {
     const unsubscribe = onSnapshot(doc(db, 'inviteCodes', myCode), async (snap) => {
       const data = snap.data();
       if (data?.joinerUid && data?.coupleId) {
-        unsubscribe();
+        unsubscribe(); // stop listening regardless of outcome
         try {
+          // Critical: write coupleId to our own user doc first.
+          // Only advance the screen if this succeeds — otherwise the user
+          // would appear linked in UI but be locked out after any restart.
           await completeInviteHandshake(user.uid, myCode, data.coupleId);
+          setCoupleId(data.coupleId);
+          setScreen('anniversary');
         } catch (e) {
-          console.warn('[CoupleSetup] handshake error:', e.message);
+          // Handshake failed — stay on generate screen and alert the user
+          Alert.alert(
+            'Connection error 😕',
+            'Your partner joined but we couldn\'t save the link. Please check your connection and try again.',
+          );
         }
-        setCoupleId(data.coupleId);
-        setScreen('anniversary');
       }
     });
 

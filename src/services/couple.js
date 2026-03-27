@@ -88,12 +88,19 @@ export const joinCouple = async (myUid, rawCode) => {
 };
 
 // ─── Called by the code generator after their listener fires ─
-// Writes coupleId to their own user doc and cleans up the invite code.
+// Writes coupleId to their own user doc (critical), then deletes the invite
+// code (best-effort cleanup). Sequential so a deleteDoc failure never
+// prevents the user doc write from completing.
 export const completeInviteHandshake = async (uid, code, coupleId) => {
-  await Promise.all([
-    updateDoc(doc(db, 'users', uid), { coupleId, inviteCode: null }),
-    deleteDoc(doc(db, 'inviteCodes', code)),
-  ]);
+  // Step 1 — critical: write coupleId to own user doc
+  await updateDoc(doc(db, 'users', uid), { coupleId, inviteCode: null });
+
+  // Step 2 — cleanup: delete the used invite code (non-critical, don't throw)
+  try {
+    await deleteDoc(doc(db, 'inviteCodes', code));
+  } catch (e) {
+    console.warn('[couple] invite code cleanup failed (non-critical):', e.message);
+  }
 };
 
 // ─── Set (or update) the anniversary date for a couple ───────
