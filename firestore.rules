@@ -39,7 +39,14 @@ service cloud.firestore {
     // ─── Couples ─────────────────────────────────────────────────
     // Only the two members of a couple can read/write their shared doc.
     match /couples/{coupleId} {
-      allow read, write: if isCoupleMembers(coupleId);
+      // Allow initial creation: the couple doc doesn't exist yet so isCoupleMembers()
+      // would fail (get() returns null). Instead check that the caller is listed as
+      // user1 or user2 in the data being written.
+      allow create: if isSignedIn() && (
+        request.resource.data.user1 == request.auth.uid ||
+        request.resource.data.user2 == request.auth.uid
+      );
+      allow read, update, delete: if isCoupleMembers(coupleId);
 
       // ── Memories subcollection ──────────────────────────────
       match /memories/{memId} {
