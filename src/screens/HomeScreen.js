@@ -557,81 +557,82 @@ export default function HomeScreen() {
             <View style={styles.modalContent}>
               <LinearGradient colors={['#302b63', '#24243e']} style={StyleSheet.absoluteFill} />
 
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>New Event Countdown</Text>
-                <TouchableOpacity onPress={() => setEventModalVisible(false)}><Ionicons name="close" size={28} color="#fff" /></TouchableOpacity>
-              </View>
+              <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>New Event Countdown</Text>
+                  <TouchableOpacity onPress={() => setEventModalVisible(false)}><Ionicons name="close" size={28} color="#fff" /></TouchableOpacity>
+                </View>
 
-              <View style={styles.inputContainer}>
-                <Ionicons name="pricetag" size={20} color={colors.primary} style={styles.inputIcon} />
-                <TextInput style={styles.input} placeholder="Event Name (e.g. Paris Trip)" placeholderTextColor="#888" value={newEventTitle} onChangeText={setNewEventTitle} />
-              </View>
+                <View style={styles.inputContainer}>
+                  <Ionicons name="pricetag" size={20} color={colors.primary} style={styles.inputIcon} />
+                  <TextInput style={styles.input} placeholder="Event Name (e.g. Paris Trip)" placeholderTextColor="#888" value={newEventTitle} onChangeText={setNewEventTitle} />
+                </View>
 
-              {!showDatePicker && (
-                <TouchableOpacity style={styles.inputContainer} onPress={() => setShowDatePicker(true)}>
-                  <Ionicons name="calendar" size={20} color={colors.primary} style={styles.inputIcon} />
-                  <Text style={[styles.input, { paddingTop: Platform.OS === 'ios' ? 14 : 0 }]}>{newEventDate.toDateString()}</Text>
+                {/* Date row */}
+                {!showDatePicker ? (
+                  <TouchableOpacity style={styles.inputContainer} onPress={() => setShowDatePicker(true)}>
+                    <Ionicons name="calendar" size={20} color={colors.primary} style={styles.inputIcon} />
+                    <Text style={[styles.input, { paddingTop: Platform.OS === 'ios' ? 14 : 0 }]}>{newEventDate.toDateString()}</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.datePickerContainer}>
+                    <DateTimePicker
+                      value={newEventDate}
+                      mode="date"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      onChange={onDateChange}
+                      minimumDate={new Date()}
+                      textColor="white"
+                    />
+                    {Platform.OS === 'ios' && (
+                      <TouchableOpacity onPress={() => setShowDatePicker(false)} style={styles.doneBtn}>
+                        <Text style={styles.doneBtnText}>Confirm Date</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+
+                {/* Time row */}
+                {!showTimePicker ? (
+                  <TouchableOpacity style={styles.inputContainer} onPress={() => setShowTimePicker(true)}>
+                    <Ionicons name="time-outline" size={20} color={colors.primary} style={styles.inputIcon} />
+                    <Text style={[styles.input, { paddingTop: Platform.OS === 'ios' ? 14 : 0 }]}>
+                      {newEventTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.datePickerContainer}>
+                    <DateTimePicker
+                      value={newEventTime}
+                      mode="time"
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      onChange={onTimeChange}
+                      textColor="white"
+                    />
+                    {Platform.OS === 'ios' && (
+                      <TouchableOpacity onPress={() => setShowTimePicker(false)} style={styles.doneBtn}>
+                        <Text style={styles.doneBtnText}>Confirm Time</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+
+                <View style={styles.iconPicker}>
+                  <Text style={styles.pickerLabel}>Choose Icon:</Text>
+                  <View style={styles.iconRow}>
+                    {['airplane', 'restaurant', 'heart', 'star', 'musical-notes', 'home'].map(i => (
+                      <TouchableOpacity key={i} style={[styles.pickIconBtn, newEventIcon === i && styles.selectedIconBtn]} onPress={() => setNewEventIcon(i)}>
+                        <Ionicons name={i} size={24} color={newEventIcon === i ? '#fff' : '#888'} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </View>
+
+                <TouchableOpacity style={styles.saveBtn} onPress={saveNewEvent}>
+                  <LinearGradient colors={gradients.active} style={StyleSheet.absoluteFill} />
+                  <Text style={styles.saveBtnText}>Save Event</Text>
                 </TouchableOpacity>
-              )}
-
-              {showDatePicker && (
-                <View style={styles.datePickerContainer}>
-                  <DateTimePicker
-                    value={newEventDate}
-                    mode="date"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    onChange={onDateChange}
-                    minimumDate={new Date()}
-                    textColor="white"
-                  />
-                  {Platform.OS === 'ios' && (
-                    <TouchableOpacity onPress={() => setShowDatePicker(false)} style={styles.doneBtn}>
-                      <Text style={styles.doneBtnText}>Confirm Date</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-
-              {/* Time picker row */}
-              {!showTimePicker ? (
-                <TouchableOpacity style={styles.inputContainer} onPress={() => setShowTimePicker(true)}>
-                  <Ionicons name="time-outline" size={20} color={colors.primary} style={styles.inputIcon} />
-                  <Text style={[styles.input, { paddingTop: Platform.OS === 'ios' ? 14 : 0 }]}>
-                    {newEventTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </Text>
-                </TouchableOpacity>
-              ) : (
-                <View style={styles.datePickerContainer}>
-                  <DateTimePicker
-                    value={newEventTime}
-                    mode="time"
-                    display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                    onChange={onTimeChange}
-                    textColor="white"
-                  />
-                  {Platform.OS === 'ios' && (
-                    <TouchableOpacity onPress={() => setShowTimePicker(false)} style={styles.doneBtn}>
-                      <Text style={styles.doneBtnText}>Confirm Time</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              )}
-
-              <View style={styles.iconPicker}>
-                <Text style={styles.pickerLabel}>Choose Icon:</Text>
-                <View style={styles.iconRow}>
-                  {['airplane', 'restaurant', 'heart', 'star', 'musical-notes', 'home'].map(i => (
-                    <TouchableOpacity key={i} style={[styles.pickIconBtn, newEventIcon === i && styles.selectedIconBtn]} onPress={() => setNewEventIcon(i)}>
-                      <Ionicons name={i} size={24} color={newEventIcon === i ? '#fff' : '#888'} />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              <TouchableOpacity style={styles.saveBtn} onPress={saveNewEvent}>
-                <LinearGradient colors={gradients.active} style={StyleSheet.absoluteFill} />
-                <Text style={styles.saveBtnText}>Save Event</Text>
-              </TouchableOpacity>
+              </ScrollView>
 
             </View>
           </BlurView>
