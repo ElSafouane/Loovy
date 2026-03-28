@@ -7,10 +7,9 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
-import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
 import * as Google from 'expo-auth-session/providers/google';
-import { signIn, signUp, resetPassword, signInWithApple, signInWithGoogle } from '../services/auth';
+import { signIn, signUp, resetPassword, signInWithGoogle } from '../services/auth';
 import { colors, gradients } from '../theme/colors';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -213,27 +212,6 @@ export default function AuthScreen({ onAuthenticated }) {
                 <View style={styles.dividerLine} />
               </View>
 
-              {/* Apple Sign-In — iOS only, always visible on physical devices */}
-              <AppleAuthentication.AppleAuthenticationButton
-                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
-                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE_OUTLINE}
-                cornerRadius={16}
-                style={styles.appleBtn}
-                onPress={async () => {
-                  setLoading(true);
-                  try {
-                    const user = await signInWithApple();
-                    onAuthenticated(user);
-                  } catch (e) {
-                    if (e.code !== 'ERR_REQUEST_CANCELED') {
-                      Alert.alert('Apple Sign-In failed', e.message);
-                    }
-                  } finally {
-                    setLoading(false);
-                  }
-                }}
-              />
-
               {/* Google Sign-In — only shown when iOS client ID is configured */}
               {!!googleClientId && (
                 <TouchableOpacity
@@ -322,9 +300,6 @@ const styles = StyleSheet.create({
   divider:     { flexDirection: 'row', alignItems: 'center', marginVertical: 20 },
   dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.12)' },
   dividerText: { color: 'rgba(255,255,255,0.4)', marginHorizontal: 12, fontSize: 13 },
-
-  // Apple
-  appleBtn: { height: 52, width: '100%', marginBottom: 10 },
 
   // Google
   googleBtn: {
