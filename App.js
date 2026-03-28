@@ -1,6 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Component } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Text, TouchableOpacity } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+
+// ── Error boundary — catches any JS crash and shows a readable screen
+// instead of a white screen. Logs the error for debugging.
+class ErrorBoundary extends Component {
+  state = { error: null };
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) {
+    console.error('[ErrorBoundary]', error.message, info.componentStack);
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    return (
+      <LinearGradient colors={['#0f0c29', '#302b63', '#24243e']} style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 }}>
+        <Text style={{ fontSize: 48, marginBottom: 16 }}>💔</Text>
+        <Text style={{ color: '#fff', fontSize: 20, fontWeight: '800', marginBottom: 12, textAlign: 'center' }}>
+          Something went wrong
+        </Text>
+        <Text style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13, textAlign: 'center', marginBottom: 28, lineHeight: 20 }}>
+          {this.state.error.message}
+        </Text>
+        <TouchableOpacity
+          onPress={() => this.setState({ error: null })}
+          style={{ backgroundColor: '#e94057', paddingHorizontal: 28, paddingVertical: 12, borderRadius: 14 }}
+        >
+          <Text style={{ color: '#fff', fontWeight: '700' }}>Try again</Text>
+        </TouchableOpacity>
+      </LinearGradient>
+    );
+  }
+}
 import { NavigationContainer } from '@react-navigation/native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -63,6 +94,7 @@ export default function App() {
   }
 
   return (
+    <ErrorBoundary>
     <GestureHandlerRootView style={{ flex: 1 }}>
       <StatusBar style="light" />
 
@@ -113,5 +145,6 @@ export default function App() {
         </CoupleProvider>
       )}
     </GestureHandlerRootView>
+    </ErrorBoundary>
   );
 }

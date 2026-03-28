@@ -20,19 +20,22 @@ export function useNotifications() {
   const responseListener = useRef(null);
 
   useEffect(() => {
-    registerForPushNotifications().then(token => {
-      if (token) {
+    // Wrap entirely — a notification failure must never crash the app
+    registerForPushNotifications()
+      .then(token => {
+        if (!token) return;
         setExpoPushToken(token);
-        // Store on user doc so Cloud Function can read it
         const uid = auth.currentUser?.uid;
         if (uid) {
           updateDoc(doc(db, 'users', uid), { expoPushToken: token }).catch(() => {});
         }
-      }
-    });
+      })
+      .catch(() => {}); // swallow all errors (simulator, permission denied, missing projectId…)
 
-    notificationListener.current = Notifications.addNotificationReceivedListener(() => {});
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(() => {});
+    try {
+      notificationListener.current = Notifications.addNotificationReceivedListener(() => {});
+      responseListener.current     = Notifications.addNotificationResponseReceivedListener(() => {});
+    } catch { /* notifications unavailable on this runtime */ }
 
     return () => {
       notificationListener.current?.remove();
@@ -62,8 +65,14 @@ async function registerForPushNotifications() {
     return null;
   }
 
-  const projectId = Constants.expoConfig?.extra?.eas?.projectId
-    ?? Constants.easConfig?.projectId;
+  const projectId =
+    Constants.expoConfig?.extra?.eas?.projectId ??
+    Constants.easConfig?.projectId;
+
+  if (!projectId) {
+    console.warn('[notifications] EAS projectId not found — skipping token fetch');
+    return null;
+  }
 
   const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
 
