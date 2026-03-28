@@ -27,7 +27,7 @@ const LOVE_LANGUAGES = [
 
 export default function SettingsScreen() {
   // ── Live Firestore data ──────────────────────────────────
-  const { myProfile, partner, couple, coupleId, updateMyProfile, updateCouple } = useCouple();
+  const { userId, myProfile, partner, couple, coupleId, updateMyProfile, updateCouple } = useCouple();
 
   // Derived values from Firestore (fallback to empty while loading)
   const myName        = myProfile?.name         || '';
@@ -43,7 +43,7 @@ export default function SettingsScreen() {
 
   // ── Anniversary approval derived state ───────────────────────
   const pendingAnnivChange     = couple?.pendingAnniversaryChange || null;
-  const myUid                  = myProfile?.uid || '';
+  const myUid                  = userId || '';
   // True when the partner (not me) has a pending proposal waiting for my answer
   const hasPendingFromPartner  = !!(pendingAnnivChange && pendingAnnivChange.proposedBy !== myUid);
   // True when I proposed but partner hasn't answered yet
@@ -87,8 +87,7 @@ export default function SettingsScreen() {
       setAvatarModalOpen(false);
       // Upload to Firebase Storage first so partner gets a real HTTPS URL
       try {
-        const uid = myProfile?.uid || require('../config/firebase').auth.currentUser?.uid;
-        const downloadUrl = await uploadAvatar(uid, localUri);
+        const downloadUrl = await uploadAvatar(userId, localUri);
         await updateMyProfile({ avatarUrl: downloadUrl, avatarEmoji: null });
       } catch (e) {
         Alert.alert('Upload failed', 'Could not upload photo. Please try again.');
@@ -646,8 +645,7 @@ export default function SettingsScreen() {
                 setBreakupModalOpen(false);
                 try {
                   // coupleId comes directly from context (not the couple doc fields)
-                  const uid = myProfile?.uid || require('../config/firebase').auth.currentUser?.uid;
-                  if (coupleId && uid) await breakupCouple(uid, coupleId);
+                  if (coupleId && userId) await breakupCouple(userId, coupleId);
                 } catch (e) {
                   Alert.alert('Error', e.message);
                 }

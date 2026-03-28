@@ -33,9 +33,10 @@ export default function HomeScreen() {
   } = useCouple();
 
   // Derived profile values (fall back gracefully while data loads)
-  const myName    = myProfile?.name    || '';
-  const myAvatar  = myProfile?.avatarUrl || 'https://i.pravatar.cc/150?u=me';
-  const myStatus  = myProfile?.status  || 'Thinking of you ❤️';
+  const myName        = myProfile?.name    || '';
+  const myAvatar      = myProfile?.avatarUrl || 'https://i.pravatar.cc/150?u=me';
+  const myStatus      = myProfile?.status  || 'Thinking of you ❤️';
+  const couplePromise = couple?.promise    || null;
   const partnerName = myProfile?.partnerNickname || partner?.name || 'Partner';
 
   const relationshipStartDate = couple?.anniversaryDate
@@ -347,6 +348,14 @@ export default function HomeScreen() {
                 <Text style={styles.heroAvatarName}>{partnerName}</Text>
               </View>
             </View>
+
+            {/* Our Promise — shown when set */}
+            {!!couplePromise && (
+              <View style={styles.promiseBanner}>
+                <Text style={styles.promiseLabel}>🤝 Our Promise</Text>
+                <Text style={styles.promiseText}>"{couplePromise}"</Text>
+              </View>
+            )}
           </BlurView>
         </Animated.View>
 
@@ -740,6 +749,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center', alignItems: 'center',
   },
   heroAvatarName: { color: colors.textSecondary, fontSize: 13, fontWeight: '600', marginTop: 8 },
+  promiseBanner: {
+    marginTop: 16,
+    marginHorizontal: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 18,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(233,64,87,0.2)',
+    alignItems: 'center',
+  },
+  promiseLabel: { color: colors.primary, fontSize: 11, fontWeight: '700', letterSpacing: 1, marginBottom: 5, textTransform: 'uppercase' },
+  promiseText:  { color: 'rgba(255,255,255,0.82)', fontSize: 14, fontStyle: 'italic', textAlign: 'center', lineHeight: 20 },
   heroHeartCol: { alignItems: 'center', marginHorizontal: 8 },
   heroHeart: { fontSize: 34, marginBottom: 8 },
   daysTogetherBadge: {

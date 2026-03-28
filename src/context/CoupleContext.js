@@ -42,7 +42,11 @@ export function CoupleProvider({ coupleId, children, onBreakup }) {
     // Couple doc → also reveals partner UID
     unsubs.push(onSnapshot(doc(db, 'couples', coupleId), async (snap) => {
       if (!snap.exists()) {
-        // Our couple doc was deleted (breakup). Clean up own user doc and signal App.js.
+        // Couple doc deleted (breakup by partner). Stop ALL listeners immediately
+        // so the subcollection listeners don't fire permission-denied errors
+        // after the couple doc — and with it the security rule check — is gone.
+        unsubs.forEach(u => u());
+        unsubs.length = 0; // prevent double-unsubscribe from useEffect cleanup
         try {
           await updateDoc(doc(db, 'users', userId), { coupleId: null, inviteCode: null });
         } catch (e) {
@@ -148,6 +152,7 @@ export function CoupleProvider({ coupleId, children, onBreakup }) {
     <CoupleContext.Provider value={{
       // Data
       user: auth.currentUser,
+      userId,        // the current user's UID — use this instead of myProfile?.uid
       myProfile,
       partner,
       partnerUid,
