@@ -52,6 +52,9 @@
           "sounds": []
         }
       ]
-    ]
+    ],
+    "updates": {
+      "url": "https://u.expo.dev/b580e650-0eba-498c-967f-f4e740fb6c61"
+    }
   }
 }
