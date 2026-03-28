@@ -42,7 +42,16 @@
     },
     "owner": "safouanee",
     "plugins": [
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-web-browser",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#e94057",
+          "sounds": []
+        }
+      ]
     ]
   }
 }
