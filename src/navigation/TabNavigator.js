@@ -14,10 +14,12 @@ import { colors }     from '../theme/colors';
 const Tab = createBottomTabNavigator();
 
 export default function TabNavigator() {
-  const { couple } = useCouple();
+  const { couple, userId } = useCouple();
 
-  // Show red dot on Settings whenever a pending anniversary change is waiting
-  const hasPendingAction = !!couple?.pendingAnniversaryChange;
+  // Show red dot only for the RECIPIENT — the person who needs to approve,
+  // not the one who proposed (they already know about their own request).
+  const pending = couple?.pendingAnniversaryChange;
+  const hasPendingAction = !!(pending && pending.proposedBy !== userId);
 
   return (
     <Tab.Navigator

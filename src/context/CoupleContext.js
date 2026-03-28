@@ -4,6 +4,9 @@ import {
   query, orderBy, addDoc, updateDoc,
   deleteDoc, serverTimestamp,
 } from 'firebase/firestore';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import Constants from 'expo-constants';
 import { auth, db } from '../config/firebase';
 
 // ─────────────────────────────────────────────────────────────
@@ -23,6 +26,25 @@ import { auth, db } from '../config/firebase';
 
 const CoupleContext = createContext(null);
 
+// Refresh + save the push token every time the couple context mounts.
+// This catches the case where the token was never saved (e.g. the user
+// was already logged in before the notification fix was deployed).
+async function refreshPushToken(uid) {
+  if (!Device.isDevice || !uid) return;
+  try {
+    const { status } = await Notifications.getPermissionsAsync();
+    if (status !== 'granted') return;
+    const projectId =
+      Constants.expoConfig?.extra?.eas?.projectId ??
+      Constants.easConfig?.projectId;
+    if (!projectId) return;
+    const { data: token } = await Notifications.getExpoPushTokenAsync({ projectId });
+    if (token) {
+      await updateDoc(doc(db, 'users', uid), { expoPushToken: token });
+    }
+  } catch (_) { /* non-critical — never crash the app */ }
+}
+
 export function CoupleProvider({ coupleId, children, onBreakup }) {
   const userId = auth.currentUser?.uid;
 
@@ -33,6 +55,11 @@ export function CoupleProvider({ coupleId, children, onBreakup }) {
   const [memories,   setMemories]   = useState([]);
   const [capsules,   setCapsules]   = useState([]);
   const [events,     setEvents]     = useState([]);
+
+  // ── Refresh push token on every app open (both users) ───────
+  useEffect(() => {
+    refreshPushToken(userId);
+  }, [userId]);
 
   // ── Main listeners (couple + subcollections + my profile) ──
   useEffect(() => {
