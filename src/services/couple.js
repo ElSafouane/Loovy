@@ -104,22 +104,27 @@ export const completeInviteHandshake = async (uid, code, coupleId) => {
   }
 };
 
-// ─── Break up: delete couple doc + subcollections, clear own user doc ─
-// We can only write our OWN user doc (Firestore rules).
-// After the couple doc is deleted, the partner's CoupleContext listener
-// fires (exists() === false) and the app routes them to setup.
+// ─── Break up: notify partner, delete couple + subcollections ─
+// Flow:
+//  1. Set breakupBy on couple doc → Cloud Function fires → partner notified
+//  2. Delete subcollection docs (memories, events)
+//  3. Delete couple doc → partner's CoupleContext detects !exists() → routes them to setup
+//  4. Clear own user doc
 export const breakupCouple = async (uid, coupleId) => {
-  // 1. Delete all subcollection documents we have access to
-  const subcollections = ['memories', 'events']; // capsules have allow delete: if false
+  // 1. Signal breakup so the Cloud Function can notify the partner BEFORE deletion
+  await updateDoc(doc(db, 'couples', coupleId), { breakupBy: uid });
+
+  // 2. Delete all subcollection documents (capsules have allow delete: if false — skip)
+  const subcollections = ['memories', 'events'];
   for (const sub of subcollections) {
     const snap = await getDocs(collection(db, 'couples', coupleId, sub));
     await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
   }
 
-  // 2. Delete the couple doc itself
+  // 3. Delete couple doc — partner's onSnapshot fires → they get routed to setup
   await deleteDoc(doc(db, 'couples', coupleId));
 
-  // 3. Clear own user doc
+  // 4. Clear own user doc
   await updateDoc(doc(db, 'users', uid), {
     coupleId:   null,
     inviteCode: null,

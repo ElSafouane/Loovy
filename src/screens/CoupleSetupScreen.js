@@ -300,9 +300,6 @@ export default function CoupleSetupScreen({ user, onLinked }) {
                 }
               </TouchableOpacity>
 
-              <TouchableOpacity style={styles.secondaryBtn} onPress={() => handleFinish(true)}>
-                <Text style={styles.secondaryBtnText}>Skip for now</Text>
-              </TouchableOpacity>
             </>
           ) : (
             <>

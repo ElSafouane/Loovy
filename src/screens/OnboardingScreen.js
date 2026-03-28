@@ -7,9 +7,11 @@ import {
   StyleSheet,
   Dimensions,
   Platform,
+  Image,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Animated, { FadeInDown } from 'react-native-reanimated';
+import * as ImagePicker from 'expo-image-picker';
 import { doc, updateDoc } from 'firebase/firestore';
 import { auth, db } from '../config/firebase';
 import { colors } from '../theme/colors';
@@ -47,15 +49,25 @@ const SLIDES = [
   },
 ];
 
+const EMOJI_AVATARS = ['🐼', '🦊', '🐻', '🐱', '🐶', '🦁', '🐸', '🐨', '🦋', '🌸', '🌙', '⭐', '🌈', '❤️', '🫶'];
+
 export default function OnboardingScreen({ user, onComplete }) {
-  const scrollRef = useRef(null);
+  const scrollRef    = useRef(null);
   const [activeIndex, setActiveIndex] = useState(0);
+  // Profile setup step (shown after last slide)
+  const [showProfileSetup, setShowProfileSetup] = useState(false);
+  const [avatarUri,  setAvatarUri]  = useState(null);
+  const [avatarEmoji, setAvatarEmoji] = useState(null);
+  const [savingAvatar, setSavingAvatar] = useState(false);
 
   const uid = user?.uid || auth.currentUser?.uid;
 
-  const handleFinish = async () => {
+  const handleFinish = async (pickedAvatarUri = null, pickedEmoji = null) => {
     try {
-      await updateDoc(doc(db, 'users', uid), { onboardingComplete: true });
+      const updates = { onboardingComplete: true };
+      if (pickedAvatarUri) updates.avatarUrl   = pickedAvatarUri;
+      if (pickedEmoji)     updates.avatarEmoji  = pickedEmoji;
+      await updateDoc(doc(db, 'users', uid), updates);
     } catch (e) {
       console.warn('OnboardingScreen: could not mark onboarding complete:', e);
     }
@@ -65,7 +77,8 @@ export default function OnboardingScreen({ user, onComplete }) {
   const handleNext = () => {
     const next = activeIndex + 1;
     if (next >= SLIDES.length) {
-      handleFinish();
+      // Show profile setup step instead of finishing immediately
+      setShowProfileSetup(true);
       return;
     }
     scrollRef.current?.scrollTo({ x: next * SCREEN_WIDTH, animated: true });
@@ -77,9 +90,94 @@ export default function OnboardingScreen({ user, onComplete }) {
     setActiveIndex(index);
   };
 
-  const isLast = activeIndex === SLIDES.length - 1;
-  const slide = SLIDES[activeIndex];
+  const pickImage = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled) {
+      setAvatarUri(result.assets[0].uri);
+      setAvatarEmoji(null);
+    }
+  };
 
+  const pickEmoji = (em) => {
+    setAvatarEmoji(em);
+    setAvatarUri(null);
+  };
+
+  const handleSaveProfile = async () => {
+    setSavingAvatar(true);
+    await handleFinish(avatarUri, avatarEmoji);
+    setSavingAvatar(false);
+  };
+
+  const isLast = activeIndex === SLIDES.length - 1;
+  const slide  = SLIDES[activeIndex];
+
+  // ── Profile setup screen ─────────────────────────────────────
+  if (showProfileSetup) {
+    return (
+      <LinearGradient colors={['#0f0c29', '#302b63', '#24243e']} style={styles.profileRoot}>
+        <Animated.View entering={FadeInDown.duration(600)} style={styles.profileContent}>
+          <Text style={styles.profileEmoji}>🤳</Text>
+          <Text style={styles.profileTitle}>Set your profile picture</Text>
+          <Text style={styles.profileSub}>
+            Your partner will see this on their home screen. Pick a photo or an emoji — you can change it any time in Settings.
+          </Text>
+
+          {/* Preview */}
+          <TouchableOpacity onPress={pickImage} style={styles.avatarPreview} activeOpacity={0.8}>
+            {avatarEmoji ? (
+              <View style={styles.emojiAvatarLarge}>
+                <Text style={{ fontSize: 60 }}>{avatarEmoji}</Text>
+              </View>
+            ) : avatarUri ? (
+              <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Text style={{ fontSize: 40 }}>📷</Text>
+                <Text style={styles.avatarPlaceholderText}>Tap to pick a photo</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+
+          {/* Emoji grid */}
+          <Text style={styles.orLabel}>— or pick an emoji —</Text>
+          <View style={styles.emojiGrid}>
+            {EMOJI_AVATARS.map(em => (
+              <TouchableOpacity
+                key={em}
+                style={[styles.emojiTile, avatarEmoji === em && styles.emojiTileSelected]}
+                onPress={() => pickEmoji(em)}
+              >
+                <Text style={{ fontSize: 28 }}>{em}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Save button */}
+          <TouchableOpacity
+            style={styles.saveBtn}
+            onPress={handleSaveProfile}
+            disabled={savingAvatar}
+            activeOpacity={0.85}
+          >
+            <LinearGradient colors={['#e94057', '#8a2387']} style={StyleSheet.absoluteFill} />
+            <Text style={styles.saveBtnText}>
+              {savingAvatar ? 'Saving…' : (avatarUri || avatarEmoji) ? "Let's go! 🚀" : 'Skip for now →'}
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </LinearGradient>
+    );
+  }
+
+  // ── Slides ───────────────────────────────────────────────────
   return (
     <View style={styles.root}>
       <ScrollView
@@ -93,7 +191,6 @@ export default function OnboardingScreen({ user, onComplete }) {
       >
         {SLIDES.map((s, i) => (
           <LinearGradient key={i} colors={s.gradient} style={styles.slide}>
-            {/* Decorative blobs */}
             <View style={[styles.blob, styles.blobTopLeft,  { backgroundColor: s.accent }]} />
             <View style={[styles.blob, styles.blobBottomRight, { backgroundColor: s.accent }]} />
 
@@ -112,7 +209,6 @@ export default function OnboardingScreen({ user, onComplete }) {
         style={styles.controls}
         pointerEvents="box-none"
       >
-        {/* Dot indicators */}
         <View style={styles.dots}>
           {SLIDES.map((s, i) => (
             <View
@@ -128,21 +224,19 @@ export default function OnboardingScreen({ user, onComplete }) {
           ))}
         </View>
 
-        {/* Skip link (hidden on last slide) */}
         {!isLast && (
-          <TouchableOpacity onPress={handleFinish} style={styles.skipWrapper}>
+          <TouchableOpacity onPress={() => setShowProfileSetup(true)} style={styles.skipWrapper}>
             <Text style={styles.skipText}>Skip</Text>
           </TouchableOpacity>
         )}
 
-        {/* Next / Let's go button */}
         <TouchableOpacity
           onPress={handleNext}
           style={[styles.nextBtn, { backgroundColor: slide.accent }]}
           activeOpacity={0.85}
         >
           <Text style={styles.nextBtnText}>
-            {isLast ? "🚀 Let's go!" : 'Next'}
+            {isLast ? '✨ Set up my profile' : 'Next'}
           </Text>
         </TouchableOpacity>
       </LinearGradient>
@@ -151,13 +245,8 @@ export default function OnboardingScreen({ user, onComplete }) {
 }
 
 const styles = StyleSheet.create({
-  root: {
-    flex: 1,
-    backgroundColor: '#0f0c29',
-  },
-  scroller: {
-    flex: 1,
-  },
+  root: { flex: 1, backgroundColor: '#0f0c29' },
+  scroller: { flex: 1 },
   slide: {
     width: SCREEN_WIDTH,
     flex: 1,
@@ -165,93 +254,102 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     overflow: 'hidden',
   },
-  slideContent: {
-    paddingHorizontal: 36,
-    alignItems: 'center',
-    zIndex: 2,
-  },
-  emoji: {
-    fontSize: 80,
-    marginBottom: 28,
-    textAlign: 'center',
-  },
+  slideContent: { paddingHorizontal: 36, alignItems: 'center', zIndex: 2 },
+  emoji: { fontSize: 80, marginBottom: 28, textAlign: 'center' },
   title: {
-    fontSize: 30,
-    fontWeight: '800',
-    color: colors.text,
-    textAlign: 'center',
-    marginBottom: 18,
-    lineHeight: 38,
+    fontSize: 30, fontWeight: '800', color: colors.text,
+    textAlign: 'center', marginBottom: 18, lineHeight: 38,
   },
-  body: {
-    fontSize: 17,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    lineHeight: 26,
-  },
+  body: { fontSize: 17, color: colors.textSecondary, textAlign: 'center', lineHeight: 26 },
 
-  // Decorative blobs
   blob: {
-    position: 'absolute',
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    opacity: 0.12,
-    zIndex: 1,
+    position: 'absolute', width: 220, height: 220,
+    borderRadius: 110, opacity: 0.12, zIndex: 1,
   },
-  blobTopLeft: {
-    top: -60,
-    left: -60,
-  },
-  blobBottomRight: {
-    bottom: -60,
-    right: -60,
-  },
+  blobTopLeft:     { top: -60,  left: -60  },
+  blobBottomRight: { bottom: -60, right: -60 },
 
-  // Controls overlay
   controls: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    position: 'absolute', bottom: 0, left: 0, right: 0,
     paddingTop: 60,
     paddingBottom: Platform.OS === 'ios' ? 50 : 36,
     paddingHorizontal: 30,
     alignItems: 'center',
   },
-  dots: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 28,
-    gap: 6,
-  },
-  dot: {
-    height: 8,
-    borderRadius: 4,
-  },
-  skipWrapper: {
-    marginBottom: 16,
-  },
-  skipText: {
-    color: 'rgba(255,255,255,0.5)',
-    fontSize: 15,
-    fontWeight: '600',
-  },
+  dots: { flexDirection: 'row', alignItems: 'center', marginBottom: 28, gap: 6 },
+  dot:  { height: 8, borderRadius: 4 },
+  skipWrapper: { marginBottom: 16 },
+  skipText: { color: 'rgba(255,255,255,0.5)', fontSize: 15, fontWeight: '600' },
   nextBtn: {
-    width: '100%',
-    paddingVertical: 18,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 8,
-    elevation: 6,
+    width: '100%', paddingVertical: 18, borderRadius: 20,
+    alignItems: 'center', justifyContent: 'center',
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35, shadowRadius: 8, elevation: 6,
   },
-  nextBtnText: {
-    color: '#fff',
-    fontSize: 18,
-    fontWeight: '700',
+  nextBtnText: { color: '#fff', fontSize: 18, fontWeight: '700' },
+
+  // ── Profile setup screen ─────────────────────────────────
+  profileRoot: { flex: 1 },
+  profileContent: {
+    flex: 1, paddingHorizontal: 28, paddingTop: 80,
+    paddingBottom: 40, alignItems: 'center',
   },
+  profileEmoji: { fontSize: 56, marginBottom: 16 },
+  profileTitle: {
+    color: '#fff', fontSize: 26, fontWeight: '800',
+    textAlign: 'center', marginBottom: 12,
+  },
+  profileSub: {
+    color: 'rgba(255,255,255,0.6)', fontSize: 15,
+    textAlign: 'center', lineHeight: 22, marginBottom: 32,
+  },
+
+  avatarPreview: { marginBottom: 20 },
+  emojiAvatarLarge: {
+    width: 110, height: 110, borderRadius: 55,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: '#e94057',
+  },
+  avatarImage: {
+    width: 110, height: 110, borderRadius: 55,
+    borderWidth: 2, borderColor: '#e94057',
+  },
+  avatarPlaceholder: {
+    width: 110, height: 110, borderRadius: 55,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 2, borderColor: 'rgba(255,255,255,0.2)',
+    borderStyle: 'dashed',
+  },
+  avatarPlaceholderText: {
+    color: 'rgba(255,255,255,0.4)', fontSize: 11,
+    textAlign: 'center', marginTop: 4,
+  },
+
+  orLabel: {
+    color: 'rgba(255,255,255,0.35)', fontSize: 13,
+    marginVertical: 16,
+  },
+
+  emojiGrid: {
+    flexDirection: 'row', flexWrap: 'wrap',
+    justifyContent: 'center', gap: 8, marginBottom: 28,
+  },
+  emojiTile: {
+    width: 48, height: 48, borderRadius: 14,
+    backgroundColor: 'rgba(255,255,255,0.07)',
+    alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)',
+  },
+  emojiTileSelected: {
+    borderColor: '#e94057',
+    backgroundColor: 'rgba(233,64,87,0.15)',
+  },
+
+  saveBtn: {
+    height: 54, width: '100%', borderRadius: 18, overflow: 'hidden',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  saveBtnText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

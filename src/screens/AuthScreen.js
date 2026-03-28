@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
   KeyboardAvoidingView, Platform, ScrollView, ActivityIndicator, Alert,
@@ -7,10 +7,13 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
 import { Ionicons } from '@expo/vector-icons';
 import Animated, { FadeInDown, FadeInUp } from 'react-native-reanimated';
-import { signIn, signUp, resetPassword } from '../services/auth';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as WebBrowser from 'expo-web-browser';
+import * as Google from 'expo-auth-session/providers/google';
+import { signIn, signUp, resetPassword, signInWithApple, signInWithGoogle } from '../services/auth';
 import { colors, gradients } from '../theme/colors';
-// Google Sign-In is wired up in src/services/auth.js (signInWithGoogle).
-// Re-enable the UI below once you have EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS.
+
+WebBrowser.maybeCompleteAuthSession();
 
 export default function AuthScreen({ onAuthenticated }) {
   const [mode, setMode]           = useState('login'); // 'login' | 'register'
@@ -19,6 +22,24 @@ export default function AuthScreen({ onAuthenticated }) {
   const [password, setPassword]   = useState('');
   const [showPass, setShowPass]   = useState(false);
   const [loading, setLoading]     = useState(false);
+
+  // ── Google Sign-In (only shown when client ID is configured) ──
+  const googleClientId = process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS;
+  const [googleRequest, googleResponse, promptGoogleAsync] = Google.useAuthRequest({
+    iosClientId:     process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_IOS,
+    androidClientId: process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_ANDROID,
+    webClientId:     process.env.EXPO_PUBLIC_GOOGLE_CLIENT_ID_WEB,
+  });
+
+  useEffect(() => {
+    if (googleResponse?.type !== 'success') return;
+    const { id_token } = googleResponse.params;
+    setLoading(true);
+    signInWithGoogle(id_token)
+      .then(user => onAuthenticated(user))
+      .catch(e  => Alert.alert('Google Sign-In failed', e.message))
+      .finally(() => setLoading(false));
+  }, [googleResponse]);
 
   const isRegister = mode === 'register';
 
@@ -185,18 +206,46 @@ export default function AuthScreen({ onAuthenticated }) {
                 }
               </TouchableOpacity>
 
-              {/* Google Sign-In button — re-enable once iosClientId is available
+              {/* ── Social sign-in ── */}
               <View style={styles.divider}>
                 <View style={styles.dividerLine} />
                 <Text style={styles.dividerText}>or</Text>
                 <View style={styles.dividerLine} />
               </View>
-              <TouchableOpacity style={styles.googleBtn} onPress={() => promptAsync()}
-                disabled={!request || loading} activeOpacity={0.85}>
-                <Text style={styles.googleIcon}>G</Text>
-                <Text style={styles.googleBtnText}>Continue with Google</Text>
-              </TouchableOpacity>
-              */}
+
+              {/* Apple Sign-In — iOS only, always visible on physical devices */}
+              <AppleAuthentication.AppleAuthenticationButton
+                buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
+                buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE_OUTLINE}
+                cornerRadius={16}
+                style={styles.appleBtn}
+                onPress={async () => {
+                  setLoading(true);
+                  try {
+                    const user = await signInWithApple();
+                    onAuthenticated(user);
+                  } catch (e) {
+                    if (e.code !== 'ERR_REQUEST_CANCELED') {
+                      Alert.alert('Apple Sign-In failed', e.message);
+                    }
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+              />
+
+              {/* Google Sign-In — only shown when iOS client ID is configured */}
+              {!!googleClientId && (
+                <TouchableOpacity
+                  style={styles.googleBtn}
+                  onPress={() => promptGoogleAsync()}
+                  disabled={!googleRequest || loading}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.googleIcon}>G</Text>
+                  <Text style={styles.googleBtnText}>Continue with Google</Text>
+                </TouchableOpacity>
+              )}
 
             </BlurView>
           </Animated.View>
@@ -273,6 +322,9 @@ const styles = StyleSheet.create({
   divider:     { flexDirection: 'row', alignItems: 'center', marginVertical: 20 },
   dividerLine: { flex: 1, height: 1, backgroundColor: 'rgba(255,255,255,0.12)' },
   dividerText: { color: 'rgba(255,255,255,0.4)', marginHorizontal: 12, fontSize: 13 },
+
+  // Apple
+  appleBtn: { height: 52, width: '100%', marginBottom: 10 },
 
   // Google
   googleBtn: {
