@@ -54,7 +54,7 @@ import { colors }              from './src/theme/colors';
 // ────────────────────────────────────────────────────────────
 
 export default function App() {
-  useNotifications(); // registers device and stores push token
+  useNotifications(firebaseUser?.uid); // registers device and stores push token; uid needed to save it
   const [appState,     setAppState]     = useState('loading');
   const [firebaseUser, setFirebaseUser] = useState(null);
   const [coupleId,     setCoupleId]     = useState(null);

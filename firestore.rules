@@ -13,11 +13,16 @@ service cloud.firestore {
     }
 
     function isCoupleMembers(coupleId) {
-      // Allow if the couple doc lists the current user as user1 or user2
-      return isSignedIn() && (
-        get(/databases/$(database)/documents/couples/$(coupleId)).data.user1 == request.auth.uid ||
-        get(/databases/$(database)/documents/couples/$(coupleId)).data.user2 == request.auth.uid
-      );
+      // Guard with exists() first — if the couple doc was just deleted,
+      // get() would return a null resource and crash the rule evaluation,
+      // causing a permission-denied error on the partner's live listeners
+      // instead of the clean !snap.exists() deletion event we need.
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/couples/$(coupleId))
+        && (
+          get(/databases/$(database)/documents/couples/$(coupleId)).data.user1 == request.auth.uid ||
+          get(/databases/$(database)/documents/couples/$(coupleId)).data.user2 == request.auth.uid
+        );
     }
 
     // ─── Users ───────────────────────────────────────────────────

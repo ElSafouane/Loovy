@@ -61,9 +61,18 @@ export function CoupleProvider({ coupleId, children, onBreakup }) {
       setPartnerUid(pUid);
     }));
 
-    // My own user doc
+    // My own user doc — also detects breakup triggered by the partner
+    // (Cloud Function clears coupleId on both user docs when couple is deleted)
     unsubs.push(onSnapshot(doc(db, 'users', userId), (snap) => {
-      if (snap.exists()) setMyProfile(snap.data());
+      if (!snap.exists()) return;
+      const data = snap.data();
+      setMyProfile(data);
+      // coupleId was cleared externally (partner broke up) — route to setup
+      if (data.coupleId === null || data.coupleId === undefined) {
+        unsubs.forEach(u => u());
+        unsubs.length = 0;
+        onBreakup?.();
+      }
     }));
 
     // Memories — ordered oldest → newest

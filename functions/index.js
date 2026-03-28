@@ -1,4 +1,4 @@
-const { onDocumentUpdated, onDocumentDeleted } = require('firebase-functions/v2/firestore');
+const { onDocumentUpdated, onDocumentDeleted, onDocumentWritten } = require('firebase-functions/v2/firestore');
 const { initializeApp }     = require('firebase-admin/app');
 const { getFirestore }      = require('firebase-admin/firestore');
 const { Expo }              = require('expo-server-sdk');
@@ -126,6 +126,25 @@ exports.onBreakupInitiated = onDocumentUpdated('couples/{coupleId}', async (even
     `${breakerName} has ended the relationship. Take care of yourself 🤍`,
     { type: 'breakup' },
   );
+
+  return null;
+});
+
+// ─── Trigger: couple doc deleted → clear both users' coupleId ─
+// This is the reliable way to disconnect the partner when a breakup happens.
+// The Firestore rule isCoupleMembers() calls get() on the couple doc;
+// once it's deleted, partners get permission-denied on their listeners
+// instead of a clean deletion event. Writing coupleId:null to their own
+// user doc (which they CAN always read) solves the race condition.
+exports.onCoupleDeleted = onDocumentDeleted('couples/{coupleId}', async (event) => {
+  const data = event.data?.data();
+  if (!data) return null;
+
+  const { user1, user2 } = data;
+  await Promise.all([
+    db.doc(`users/${user1}`).update({ coupleId: null }).catch(() => {}),
+    db.doc(`users/${user2}`).update({ coupleId: null }).catch(() => {}),
+  ]);
 
   return null;
 });

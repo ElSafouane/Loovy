@@ -4,7 +4,7 @@ import * as Device from 'expo-device';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { doc, updateDoc } from 'firebase/firestore';
-import { db, auth } from '../config/firebase';
+import { db } from '../config/firebase';
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -14,24 +14,29 @@ Notifications.setNotificationHandler({
   }),
 });
 
-export function useNotifications() {
+// uid is passed explicitly so the token is saved as soon as auth resolves,
+// even if auth.currentUser was null when the hook first mounted.
+export function useNotifications(uid) {
   const [expoPushToken, setExpoPushToken] = useState(null);
   const notificationListener = useRef(null);
   const responseListener = useRef(null);
 
+  // Re-runs whenever uid changes (null → logged-in uid → saves token)
   useEffect(() => {
-    // Wrap entirely — a notification failure must never crash the app
+    if (!uid) return; // wait until we know who the user is
+
     registerForPushNotifications()
       .then(token => {
         if (!token) return;
         setExpoPushToken(token);
-        const uid = auth.currentUser?.uid;
-        if (uid) {
-          updateDoc(doc(db, 'users', uid), { expoPushToken: token }).catch(() => {});
-        }
+        // Save/refresh token every login so it stays up-to-date
+        updateDoc(doc(db, 'users', uid), { expoPushToken: token }).catch(() => {});
       })
-      .catch(() => {}); // swallow all errors (simulator, permission denied, missing projectId…)
+      .catch(() => {});
+  }, [uid]);
 
+  // Notification listeners — set up once, independent of uid
+  useEffect(() => {
     try {
       notificationListener.current = Notifications.addNotificationReceivedListener(() => {});
       responseListener.current     = Notifications.addNotificationResponseReceivedListener(() => {});
